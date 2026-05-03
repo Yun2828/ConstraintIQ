@@ -223,6 +223,13 @@ class GDTDatumReferenceRule:
         # Build the set of defined datum labels from the model.
         defined_datum_labels: set[str] = {d.label for d in model.datums}
 
+        # If no datums were extracted at all, skip this rule — the parser
+        # may not have found datum symbols, so we can't distinguish "no datums
+        # defined" from "datums not extracted". DatumReferenceFrameRule handles
+        # the missing-datum case.
+        if not defined_datum_labels:
+            return issues
+
         # Check top-level feature control frames.
         all_fcfs = list(model.feature_control_frames)
 

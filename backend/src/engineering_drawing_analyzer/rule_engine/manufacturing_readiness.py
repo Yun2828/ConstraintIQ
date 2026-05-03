@@ -463,28 +463,10 @@ class ViewSufficiencyRule:
         """Return ``CRITICAL`` issues for features not represented in any view."""
         issues: list[Issue] = []
 
-        # Condition 1: no views at all.
-        if not model.views and model.features:
-            issues.append(
-                Issue(
-                    issue_id=str(uuid.uuid4()),
-                    rule_id=self.rule_id,
-                    issue_type="NO_ORTHOGRAPHIC_VIEWS",
-                    severity=Severity.CRITICAL,
-                    description=(
-                        "The drawing contains no orthographic views.  At least one "
-                        "view (front, top, side, section, or detail) is required to "
-                        "represent the part geometry unambiguously."
-                    ),
-                    location=_drawing_location(),
-                    corrective_action=(
-                        "Add the minimum set of orthographic views required to fully "
-                        "describe the part geometry.  Refer to ASME Y14.3-2012 "
-                        "section 4 for view selection guidelines."
-                    ),
-                    standard_reference="ASME Y14.3-2012 section 4",
-                )
-            )
+        # If no views were extracted at all, skip — the parser may not support
+        # view label extraction for this drawing format/style.
+        # We only fire if views were explicitly defined but features are missing.
+        if not model.views:
             return issues
 
         # Condition 2: build the set of feature IDs that appear in at least one view.

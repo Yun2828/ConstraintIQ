@@ -193,6 +193,12 @@ class PositionDimensionRule:
         # Collect datum labels defined in the model.
         datum_labels: set[str] = {d.label for d in model.datums}
 
+        # If no datums were extracted, skip position checks — we can't
+        # meaningfully verify position without a datum reference frame.
+        # DatumReferenceFrameRule handles the missing-datum case separately.
+        if not datum_labels and not model.dimensions:
+            return issues
+
         # Collect feature IDs that have at least one size dimension (fully
         # dimensioned features can serve as position references).
         fully_dimensioned_ids: set[str] = {

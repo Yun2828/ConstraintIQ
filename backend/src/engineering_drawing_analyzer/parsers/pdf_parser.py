@@ -38,6 +38,7 @@ except ImportError as _fitz_import_error:  # pragma: no cover
 
 from ..exceptions import ParseError
 from ..models import (
+    Datum,
     Dimension,
     DrawingFormat,
     Feature,
@@ -47,6 +48,7 @@ from ..models import (
     Point2D,
     TitleBlock,
     Tolerance,
+    View,
 )
 
 # ---------------------------------------------------------------------------
@@ -105,6 +107,38 @@ _UNIT_RE = re.compile(r"\b(mm|in|inch|inches|ft|cm|m)\b", re.IGNORECASE)
 
 # Default unit when none can be detected
 _DEFAULT_UNIT = "mm"
+
+# Regex to detect a datum label: single uppercase letter A-Z, possibly boxed
+# Matches: "A", "B", "C", "(A)", "[A]", "DATUM A", "DATUM: A"
+_DATUM_LABEL_RE = re.compile(
+    r"(?:datum\s*:?\s*)?(?:\(|\[)?([A-Z])(?:\)|\])?\s*$",
+    re.IGNORECASE,
+)
+
+# View label keywords found in engineering drawings
+_VIEW_LABEL_RE = re.compile(
+    r"\b(FRONT|TOP|SIDE|RIGHT|LEFT|BOTTOM|REAR|BACK|"
+    r"SECTION\s+[A-Z]-[A-Z]|DETAIL\s+[A-Z]|"
+    r"VIEW\s+[A-Z]|ISO(?:METRIC)?|AUXILIARY|AUX)\b",
+    re.IGNORECASE,
+)
+
+# Hole/circle detection: text near a circular path with Ø or R prefix
+_HOLE_TEXT_RE = re.compile(r"[ØøRr∅]\s*\d+(?:\.\d+)?", re.UNICODE)
+
+# Thread specification patterns
+_THREAD_RE = re.compile(
+    r"\b(M\d+(?:\.\d+)?(?:x\d+(?:\.\d+)?)?|UNC|UNF|UNEF|NPT|NPTF|"
+    r"\d+\s*-\s*\d+\s*(?:UNC|UNF)|TAP|THREAD)\b",
+    re.IGNORECASE,
+)
+
+# General tolerance block patterns: "±0.1", "TOL ±0.05", "UNLESS OTHERWISE NOTED"
+_GENERAL_TOL_RE = re.compile(
+    r"(?:general\s+tol(?:erance)?s?\s*:?\s*|unless\s+otherwise\s+noted\s*:?\s*)"
+    r"[±]\s*([\d.]+)",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +452,11 @@ class PDFParser:
         dimensions: list[Dimension] = []
         feature_control_frames: list[FeatureControlFrame] = []
         notes: list[str] = []
+        datums: list[Datum] = []
+        views: list[View] = []
         title_block: Optional[TitleBlock] = None
         unit: str = _DEFAULT_UNIT
+        general_tolerance: Optional[Tolerance] = None
 
         page_count = doc.page_count
         if page_count == 0:
@@ -440,12 +477,17 @@ class PDFParser:
                     page_notes,
                     page_tb,
                     page_unit,
+                    page_datums,
+                    page_views,
+                    page_general_tol,
                 ) = self._extract_page(page, page_number, source_path)
 
                 features.extend(page_features)
                 dimensions.extend(page_dims)
                 feature_control_frames.extend(page_fcfs)
                 notes.extend(page_notes)
+                datums.extend(page_datums)
+                views.extend(page_views)
 
                 # Use the first title block found across all pages
                 if page_tb is not None and title_block is None:
@@ -454,6 +496,10 @@ class PDFParser:
                 # Use the first non-default unit detected
                 if page_unit != _DEFAULT_UNIT and unit == _DEFAULT_UNIT:
                     unit = page_unit
+
+                # Use the first general tolerance found
+                if page_general_tol is not None and general_tolerance is None:
+                    general_tolerance = page_general_tol
 
             except ParseError:
                 raise
@@ -473,11 +519,11 @@ class PDFParser:
             source_format=DrawingFormat.PDF,
             features=features,
             dimensions=dimensions,
-            datums=[],
+            datums=datums,
             feature_control_frames=feature_control_frames,
             title_block=title_block,
-            views=[],
-            general_tolerance=None,
+            views=views,
+            general_tolerance=general_tolerance,
             notes=notes,
         )
 
@@ -497,6 +543,9 @@ class PDFParser:
         list[str],
         Optional[TitleBlock],
         str,
+        list[Datum],
+        list[View],
+        Optional[Tolerance],
     ]:
         """Extract all content from a single PDF page.
 
@@ -584,7 +633,7 @@ class PDFParser:
 
         # Build Dimension objects
         for idx, span in dim_spans:
-            dim = self._span_to_dimension(span, unit, view_name, path_centers)
+            dim = self._span_to_dimension(span, unit, view_name, features, path_centers)
             if dim is not None:
                 dimensions.append(dim)
                 used_span_indices.add(idx)
@@ -596,17 +645,64 @@ class PDFParser:
                 feature_control_frames.append(fcf)
                 used_span_indices.add(idx)
 
-        # Remaining spans become notes
+        # Remaining spans become notes, datums, or view labels
+        datums: list[Datum] = []
+        views: list[View] = []
+        general_tolerance: Optional[Tolerance] = None
+        view_feature_ids = [f.id for f in features]
+
         for idx, span in other_spans:
             if idx not in used_span_indices:
                 text = span.get("text", "").strip()
-                if text:
-                    notes.append(text)
+                if not text:
+                    continue
+
+                # Check for datum label (single letter, possibly boxed)
+                datum_match = _DATUM_LABEL_RE.match(text)
+                if datum_match and len(text) <= 6:
+                    label = datum_match.group(1).upper()
+                    span_center_pt = _span_center(span)
+                    # Find nearest feature to associate datum with
+                    nearest_fid = self._nearest_feature_id(span_center_pt, features, path_centers)
+                    datum_loc = _location_from_point(span_center_pt, view_name=view_name, label=label)
+                    datums.append(Datum(
+                        label=label,
+                        feature_id=nearest_fid or "",
+                        location=datum_loc,
+                    ))
+                    used_span_indices.add(idx)
+                    continue
+
+                # Check for view label
+                view_match = _VIEW_LABEL_RE.search(text)
+                if view_match:
+                    view_label = view_match.group(0).upper().strip()
+                    views.append(View(name=view_label, features=view_feature_ids))
+                    used_span_indices.add(idx)
+                    continue
+
+                # Check for general tolerance block
+                if general_tolerance is None:
+                    gt_match = _GENERAL_TOL_RE.search(text)
+                    if gt_match:
+                        try:
+                            tol_val = float(gt_match.group(1))
+                            general_tolerance = Tolerance(upper=tol_val, lower=-tol_val, is_general=True)
+                            used_span_indices.add(idx)
+                            continue
+                        except ValueError:
+                            pass
+
+                notes.append(text)
+
+        # If no views were found but we have features, create a default view
+        if not views and features:
+            views.append(View(name=f"PAGE_{page_number}", features=view_feature_ids))
 
         # ---- Title block extraction ---------------------------------------
         title_block = _extract_title_block_from_spans(all_spans)
 
-        return features, dimensions, feature_control_frames, notes, title_block, unit
+        return features, dimensions, feature_control_frames, notes, title_block, unit, datums, views, general_tolerance
 
     # ------------------------------------------------------------------
     # Path → Feature
@@ -615,39 +711,74 @@ class PDFParser:
     def _path_to_feature(
         self, path: dict, view_name: str
     ) -> tuple[Feature, Optional[Point2D]]:
-        """Convert a PyMuPDF drawing path dict to a Feature.
-
-        PyMuPDF path dicts have a "type" key:
-            "l" → line segment
-            "c" → cubic Bézier curve
-            "qu" → quadratic Bézier curve
-            "re" → rectangle
-            "s" → stroke (open path)
-            "f" → fill (closed path)
-
-        The path also has an "items" list of tuples describing the path
-        segments, and a "rect" bounding box.
-
-        Args:
-            path:      PyMuPDF drawing path dict.
-            view_name: Name of the view/page for the LocationReference.
-
-        Returns:
-            (Feature, center_point)
-        """
         path_type = path.get("type", "")
         items = path.get("items", [])
 
         # Determine semantic feature type from path geometry
-        feature_type = self._classify_path(path_type, items)
+        feature_type = self._classify_path_semantic(path_type, items, path)
 
         center = _path_center(path)
         location = _location_from_point(center, view_name=view_name)
 
+        rect = path.get("rect")
+        is_angular = False
+        if rect:
+            try:
+                r = fitz.Rect(rect)
+                # Detect angular features: non-square polylines with significant area
+                if feature_type == "POLYLINE":
+                    aspect = max(r.width, r.height) / max(min(r.width, r.height), 1)
+                    if aspect > 3:
+                        is_angular = True
+            except Exception:  # noqa: BLE001
+                pass
+
         return (
-            Feature(id=_new_id(), feature_type=feature_type, location=location),
+            Feature(
+                id=_new_id(),
+                feature_type=feature_type,
+                location=location,
+                is_angular=is_angular,
+            ),
             center,
         )
+
+    def _classify_path_semantic(self, path_type: str, items: list, path: dict) -> str:
+        """Classify a PDF path into a semantic feature type."""
+        rect = path.get("rect")
+        if rect:
+            try:
+                r = fitz.Rect(rect)
+                w, h = r.width, r.height
+                # Near-square with curves → likely a hole/circle
+                if path_type != "re":
+                    item_types = {
+                        item[0] for item in items
+                        if isinstance(item, (list, tuple)) and item
+                    }
+                    if "c" in item_types or "qu" in item_types:
+                        aspect = max(w, h) / max(min(w, h), 1)
+                        if aspect < 1.3:
+                            return "HOLE"
+                        return "CURVE"
+            except Exception:  # noqa: BLE001
+                pass
+
+        if path_type == "re":
+            return "RECT"
+
+        if not items:
+            return "PATH"
+
+        item_types = {item[0] for item in items if isinstance(item, (list, tuple)) and item}
+
+        if item_types == {"l"}:
+            if len(items) == 1:
+                return "LINE"
+            return "POLYLINE"
+        elif "c" in item_types or "qu" in item_types:
+            return "CURVE"
+        return "PATH"
 
     def _is_meaningful_geometry(
         self, path: dict, page_w: float, page_h: float
@@ -751,6 +882,27 @@ class PDFParser:
         else:
             return "PATH"
 
+    def _nearest_feature_id(
+        self,
+        point: Optional[Point2D],
+        features: list[Feature],
+        path_centers: list[Optional[Point2D]],
+        threshold: float = 60.0,
+    ) -> Optional[str]:
+        """Return the ID of the feature whose center is closest to *point*."""
+        if point is None or not features:
+            return None
+        best_dist = threshold
+        best_id: Optional[str] = None
+        for feature, center in zip(features, path_centers):
+            if center is None:
+                continue
+            dist = _point_distance(point, center)
+            if dist < best_dist:
+                best_dist = dist
+                best_id = feature.id
+        return best_id
+
     # ------------------------------------------------------------------
     # Span → Dimension
     # ------------------------------------------------------------------
@@ -760,6 +912,7 @@ class PDFParser:
         span: dict,
         unit: str,
         view_name: str,
+        features: list[Feature],
         path_centers: list[Optional[Point2D]],
     ) -> Optional[Dimension]:
         """Convert a text span to a Dimension object.
@@ -798,10 +951,9 @@ class PDFParser:
         span_center = _span_center(span)
         location = _location_from_point(span_center, view_name=view_name, label=text)
 
-        # Associate with the nearest path
-        associated_feature_ids: list[str] = []
-        # (We don't have feature IDs here; association is done at a higher level
-        # if needed.  For now we leave this empty, consistent with DXF parser.)
+        # Associate with the nearest feature within proximity threshold
+        nearest_fid = self._nearest_feature_id(span_center, features, path_centers, threshold=80.0)
+        associated_feature_ids: list[str] = [nearest_fid] if nearest_fid else []
 
         return Dimension(
             id=_new_id(),
