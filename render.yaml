@@ -7,6 +7,6 @@ services:
     healthCheckPath: /health
     envVars:
       - key: ALLOWED_ORIGINS
-        value: "*"
+        value: "https://constraint-iq.vercel.app"
       - key: PORT
         value: "8000"

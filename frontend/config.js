@@ -15,7 +15,5 @@
 // Allow the deployment pipeline to inject the real URL via a simple sed/envsubst
 // in the Vercel build command (see vercel.json).
 window.CONSTRAINT_IQ_CONFIG = {
-  // Replace this with your Railway (or other) backend URL.
-  // Example: "https://constraint-iq-backend.up.railway.app"
-  backendUrl: window.__BACKEND_URL__ || "http://localhost:8000",
+  backendUrl: window.__BACKEND_URL__ || "https://constraint-iq-backend.onrender.com",
 };
