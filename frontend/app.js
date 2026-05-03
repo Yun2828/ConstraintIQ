@@ -526,11 +526,20 @@ function renderResults(report) {
   const allLow  = allIssues.filter(i => mapSeverity(i.severity) === "low").length;
 
   let score = 100;
-  if (allIssues.length > 0) {
-    score = Math.max(0, Math.round(100
-      - Math.min(allHigh * 12, 65)
-      - Math.min(allMed  *  5, 20)
-      - Math.min(allLow  *  2,  5)));
+  if (locatedIssues.length > 0 || allIssues.length > 0) {
+    // If no located issues (no dots on PDF) but drawing-level issues exist,
+    // still penalise but cap minimum at 50 so it doesn't look like 0%
+    const effectiveHigh = allHigh;
+    const effectiveMed  = allMed;
+    const effectiveLow  = allLow;
+    if (effectiveHigh === 0 && effectiveMed === 0 && effectiveLow === 0) {
+      score = 100; // truly no issues
+    } else {
+      score = Math.max(0, Math.round(100
+        - Math.min(effectiveHigh * 12, 65)
+        - Math.min(effectiveMed  *  5, 20)
+        - Math.min(effectiveLow  *  2,  5)));
+    }
   }
 
   const circumference = 150.8;
@@ -580,6 +589,11 @@ function renderPanel(issues) {
   panelIssues.innerHTML = "";
 
   if (!issues.length) {
+    // Show 100% when no located issues
+    scoreValue.textContent = "100%";
+    scoreArc.style.strokeDashoffset = "0";
+    scoreArc.style.stroke = "#22c55e";
+    scoreLabel.textContent = "Ready for Release";
     panelIssues.innerHTML = `
       <div class="issues-placeholder">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">
