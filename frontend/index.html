@@ -178,41 +178,15 @@
               </div>
             </div>
             <div class="viewer-canvas" id="viewerCanvas">
-              <div class="mock-drawing" id="mockDrawing">
-                <div class="drawing-border">
-                  <div class="drawing-title-block">
-                    <div class="tb-row"><span class="tb-label">PART NAME</span><span class="tb-value" id="partName">MOUNTING BRACKET</span></div>
-                    <div class="tb-row"><span class="tb-label">MATERIAL</span><span class="tb-value">6061-T6 ALUM</span></div>
-                    <div class="tb-row"><span class="tb-label">DRAWN BY</span><span class="tb-value">J. HARRIS</span></div>
-                    <div class="tb-row"><span class="tb-label">REV</span><span class="tb-value">C</span></div>
-                  </div>
-                  <div class="drawing-body">
-                    <svg class="drawing-svg" viewBox="0 0 500 340" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="80" y="60" width="280" height="180" fill="none" stroke="#1e293b" stroke-width="2"/>
-                      <circle cx="140" cy="120" r="18" fill="none" stroke="#1e293b" stroke-width="1.5"/>
-                      <circle cx="140" cy="120" r="2" fill="#1e293b"/>
-                      <circle cx="300" cy="120" r="18" fill="none" stroke="#1e293b" stroke-width="1.5"/>
-                      <circle cx="300" cy="120" r="2" fill="#1e293b"/>
-                      <rect x="185" y="185" width="70" height="22" rx="11" fill="none" stroke="#1e293b" stroke-width="1.5"/>
-                      <line x1="80" y1="270" x2="360" y2="270" stroke="#475569" stroke-width="1" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
-                      <text x="220" y="285" text-anchor="middle" font-size="10" fill="#475569">4.250</text>
-                      <line x1="370" y1="60" x2="370" y2="240" stroke="#475569" stroke-width="1"/>
-                      <text x="385" y="155" text-anchor="middle" font-size="10" fill="#475569" transform="rotate(90,385,155)">2.500</text>
-                      <rect x="110" y="148" width="60" height="18" fill="none" stroke="#475569" stroke-width="1"/>
-                      <text x="140" y="161" text-anchor="middle" font-size="9" fill="#475569">⌀0.005 A</text>
-                      <line x1="140" y1="95" x2="140" y2="145" stroke="#475569" stroke-width="0.5" stroke-dasharray="4,2"/>
-                      <line x1="115" y1="120" x2="165" y2="120" stroke="#475569" stroke-width="0.5" stroke-dasharray="4,2"/>
-                      <line x1="300" y1="95" x2="300" y2="145" stroke="#475569" stroke-width="0.5" stroke-dasharray="4,2"/>
-                      <line x1="275" y1="120" x2="325" y2="120" stroke="#475569" stroke-width="0.5" stroke-dasharray="4,2"/>
-                      <defs>
-                        <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                          <path d="M0,0 L0,6 L6,3 z" fill="#475569"/>
-                        </marker>
-                      </defs>
-                    </svg>
-                    <div id="overlayContainer"></div>
-                  </div>
+              <!-- Real file viewer: PDF shown in iframe, DXF/DWG shows fallback -->
+              <div class="file-viewer-wrap" id="fileViewerWrap">
+                <iframe id="pdfViewer" class="pdf-iframe" style="display:none"></iframe>
+                <div class="dxf-fallback" id="dxfFallback" style="display:none">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  <p id="dxfFallbackName"></p>
+                  <span>DXF/DWG preview not available in browser.<br>Analysis results are shown in the panel →</span>
                 </div>
+                <div id="overlayContainer" class="overlay-on-viewer"></div>
               </div>
             </div>
           </div>

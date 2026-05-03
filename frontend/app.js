@@ -47,7 +47,7 @@ const scoreValue         = document.getElementById("scoreValue");
 const scoreArc           = document.getElementById("scoreArc");
 const scoreLabel         = document.getElementById("scoreLabel");
 const summaryChips       = document.getElementById("summaryChips");
-const partName           = document.getElementById("partName");
+const partName           = { textContent: "" }; // stub — title block removed from viewer
 const releaseStatus      = document.getElementById("releaseStatus");
 const releaseStatusBadge = document.getElementById("releaseStatusBadge");
 
@@ -119,6 +119,9 @@ function openProjectInWorkspace(filename, file) {
   analysisRun = false;
   lastReport = null;
   clearResults();
+
+  // Load the real file into the viewer
+  loadFileIntoViewer(file || null);
 
   document.querySelectorAll(".dash-project-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.filename === filename);
@@ -628,6 +631,39 @@ function issueLocation(issue, idx, allIssues) {
     x: `${12 + col * 20}%`,
     y: `${15 + row * 18}%`,
   };
+}
+
+// ─── Load file into viewer ────────────────────────────────────────
+function loadFileIntoViewer(file) {
+  const pdfViewer  = document.getElementById("pdfViewer");
+  const dxfFallback = document.getElementById("dxfFallback");
+  const dxfFallbackName = document.getElementById("dxfFallbackName");
+
+  // Revoke any previous object URL to free memory
+  if (pdfViewer._objectUrl) {
+    URL.revokeObjectURL(pdfViewer._objectUrl);
+    pdfViewer._objectUrl = null;
+  }
+
+  if (!file) {
+    pdfViewer.style.display = "none";
+    dxfFallback.style.display = "none";
+    return;
+  }
+
+  const suffix = file.name.split(".").pop().toLowerCase();
+  if (suffix === "pdf") {
+    const url = URL.createObjectURL(file);
+    pdfViewer._objectUrl = url;
+    pdfViewer.src = url;
+    pdfViewer.style.display = "block";
+    dxfFallback.style.display = "none";
+  } else {
+    // DXF / DWG — no browser renderer available
+    pdfViewer.style.display = "none";
+    dxfFallbackName.textContent = file.name;
+    dxfFallback.style.display = "flex";
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

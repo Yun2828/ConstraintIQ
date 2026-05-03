@@ -398,12 +398,59 @@ body {
 
 .viewer-canvas {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   background: #060b18;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  position: relative;
+}
+
+.file-viewer-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 32px;
+}
+
+.pdf-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.dxf-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+  padding: 40px;
+}
+.dxf-fallback p {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: 'Courier New', monospace;
+}
+.dxf-fallback span {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.overlay-on-viewer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* Mock drawing */
