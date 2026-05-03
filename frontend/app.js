@@ -400,12 +400,36 @@ function clearResults() {
 
 function renderResults(report) {
   // Normalise issues into the shape the UI expects
+  // First compute the bounding box of all issue coordinates for normalization
+  const rawCoords = (report.issues || [])
+    .map(i => i.location && i.location.coordinates)
+    .filter(c => c && c.x != null && c.y != null);
+
+  let pageBounds = null;
+  if (rawCoords.length > 0) {
+    const xs = rawCoords.map(c => c.x);
+    const ys = rawCoords.map(c => c.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    pageBounds = {
+      minX, minY,
+      rangeX: maxX - minX || 1,
+      rangeY: maxY - minY || 1,
+    };
+  }
+
   const issues = (report.issues || []).map((issue, idx) => ({
     id: idx + 1,
     title: formatIssueTitle(issue.issue_type),
     severity: mapSeverity(issue.severity),
     category: issue.rule_id || issue.issue_type,
-    location: issueLocation(issue, idx),
+    location: issueLocation(
+      {
+        _rawCoords: issue.location && issue.location.coordinates,
+        _pageBounds: pageBounds,
+      },
+      idx,
+    ),
     description: issue.description || "",
     fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
     costImpact: costImpactFromSeverity(issue.severity),
@@ -456,9 +480,13 @@ function renderResults(report) {
     panelIssues.parentElement.insertBefore(banner, panelIssues);
   }
 
-  // Overlays on drawing (spread evenly since we don't have real coordinates)
+  // Overlays on drawing — only show dots for issues with real coordinates
   overlayContainer.innerHTML = "";
   issues.forEach((issue, idx) => {
+    // Skip drawing-level issues that have no meaningful location
+    if (!issue.location || issue.location.x === "12.0%" && issue.location.y === "15.0%"
+        && !rawCoords.length) return;
+
     const dot = document.createElement("div");
     dot.className = "issue-overlay";
     dot.style.left = issue.location.x;
@@ -577,11 +605,22 @@ function rfiRiskFromSeverity(sev) {
   }
 }
 
-// Spread issue markers across the drawing canvas in a grid pattern
-function issueLocation(issue, idx) {
+// Map issue location to a position on the drawing canvas.
+// Uses real PDF coordinates when available, otherwise falls back to a grid.
+function issueLocation(issue, idx, allIssues) {
+  // Try to use real coordinates from the backend
+  const coords = issue._rawCoords;
+  if (coords && coords.x != null && coords.y != null && issue._pageBounds) {
+    const bounds = issue._pageBounds;
+    // Clamp to 5%–95% so dots don't sit on the very edge
+    const xPct = Math.min(95, Math.max(5, ((coords.x - bounds.minX) / bounds.rangeX) * 90 + 5));
+    const yPct = Math.min(95, Math.max(5, ((coords.y - bounds.minY) / bounds.rangeY) * 90 + 5));
+    return { x: `${xPct.toFixed(1)}%`, y: `${yPct.toFixed(1)}%` };
+  }
+  // Fallback: grid for issues without coordinates
   const cols = 4;
   const rows = 4;
-  const totalSlots = cols * rows; // 16 max visible slots
+  const totalSlots = cols * rows;
   const slotIdx = idx % totalSlots;
   const col = slotIdx % cols;
   const row = Math.floor(slotIdx / cols);
