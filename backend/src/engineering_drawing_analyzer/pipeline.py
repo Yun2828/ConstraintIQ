@@ -299,87 +299,119 @@ class AnalysisPipeline:
         report_format: ReportFormat,
         drawing_id: str,
     ) -> bytes:
-        """Execute all pipeline stages sequentially.
+        """Execute all pipeline stages sequentially."""
+        import os
 
-        This method runs inside a daemon thread so that the caller can
-        enforce a wall-clock timeout.
-        """
         # Stage 1: Ingestion
         try:
             raw_bytes = self._ingestion.ingest(file_path)
             drawing_format = self._ingestion.detect_format(file_path)
         except (FileTooLargeError, UnsupportedFormatError) as exc:
-            self._log_error(
-                drawing_id=drawing_id,
-                error_type=type(exc).__name__,
-                message=str(exc),
-                level=logging.ERROR,
-            )
+            self._log_error(drawing_id=drawing_id, error_type=type(exc).__name__,
+                            message=str(exc), level=logging.ERROR)
             raise
+
+        file_size = len(raw_bytes)
+        self._logger.info(
+            json.dumps({
+                "component": "AnalysisPipeline",
+                "drawing_id": drawing_id,
+                "file_size_bytes": file_size,
+                "format": str(drawing_format),
+            })
+        )
 
         # Stage 2: Parsing
         try:
             parser = self._select_parser(drawing_format)
             model: GeometricModel = parser.parse(raw_bytes, file_path)
         except ParseError as exc:
-            self._log_error(
-                drawing_id=drawing_id,
-                error_type="ParseError",
-                message=f"[{exc.file_format}] {exc.message}",
-                level=logging.ERROR,
-            )
+            self._log_error(drawing_id=drawing_id, error_type="ParseError",
+                            message=f"[{exc.file_format}] {exc.message}", level=logging.ERROR)
             raise
 
-        # Stage 3: Symbol detection + enrichment
+        # Debug logging
+        self._logger.info(
+            json.dumps({
+                "component": "AnalysisPipeline",
+                "drawing_id": drawing_id,
+                "features": len(model.features),
+                "dimensions": len(model.dimensions),
+                "tolerances": sum(1 for d in model.dimensions if d.tolerance is not None),
+                "datums": len(model.datums),
+                "fcfs": len(model.feature_control_frames),
+                "notes": len(model.notes),
+                "views": len(model.views),
+                "has_title_block": model.title_block is not None,
+                "has_general_tolerance": model.general_tolerance is not None,
+            })
+        )
+
         issues: list[Issue] = []
+
+        # Fallback: if extraction yielded nothing useful, warn
+        if (not model.features and not model.dimensions
+                and not model.feature_control_frames and not model.notes):
+            issues.append(Issue(
+                issue_id=f"PARSE-WARN-{uuid.uuid4().hex[:8]}",
+                rule_id="PDF_PARSER",
+                issue_type="INSUFFICIENT_DATA_EXTRACTED",
+                severity=Severity.WARNING,
+                description=(
+                    "Unable to extract sufficient data from the PDF. "
+                    "The file may be rasterized (scanned image), password-protected, "
+                    "or use an unsupported encoding. No geometry or text was detected."
+                ),
+                location=LocationReference(view_name="DOCUMENT", coordinates=None, label=None),
+                corrective_action=(
+                    "Ensure the PDF contains vector geometry and selectable text. "
+                    "If the drawing was scanned, export it from CAD software as a "
+                    "vector PDF. DXF format is recommended for best results."
+                ),
+                standard_reference=None,
+            ))
+            return self._report_generator.generate(
+                model=model, issues=issues, format=report_format
+            )
+
+        # Stage 3: Symbol detection (heuristic only — ML disabled)
         try:
             symbols = self._symbol_detector.detect(model)
             model, sd_issues = self._symbol_detector.enrich(model, symbols)
             issues.extend(sd_issues)
         except Exception as exc:  # noqa: BLE001
-            self._log_error(
-                drawing_id=drawing_id,
-                error_type=type(exc).__name__,
-                message=f"Symbol detection failed: {exc}",
-                level=logging.WARNING,
-            )
-            # Non-fatal: continue without ML enrichment
+            self._log_error(drawing_id=drawing_id, error_type=type(exc).__name__,
+                            message=f"Symbol detection failed: {exc}", level=logging.WARNING)
 
         # Stage 4: Rule engine
-        # Exception isolation is already handled inside RuleEngine.run();
-        # per-rule exceptions produce INFO issues and execution continues.
         try:
             rule_issues = self._rule_engine.run(model)
             issues.extend(rule_issues)
         except Exception as exc:  # noqa: BLE001
-            self._log_error(
-                drawing_id=drawing_id,
-                error_type=type(exc).__name__,
-                message=f"Rule engine failed unexpectedly: {exc}",
-                level=logging.ERROR,
-            )
-            # Append a warning so the report reflects the failure
-            issues.append(
-                Issue(
-                    issue_id=f"RE-FATAL-{uuid.uuid4().hex[:8]}",
-                    rule_id="RULE_ENGINE",
-                    issue_type="RULE_ENGINE_FATAL_ERROR",
-                    severity=Severity.WARNING,
-                    description=(
-                        f"The rule engine encountered a fatal error and could "
-                        f"not complete verification: {exc}"
-                    ),
-                    location=LocationReference(
-                        view_name="N/A", coordinates=None, label=None
-                    ),
-                )
-            )
+            self._log_error(drawing_id=drawing_id, error_type=type(exc).__name__,
+                            message=f"Rule engine failed: {exc}", level=logging.ERROR)
+            issues.append(Issue(
+                issue_id=f"RE-FATAL-{uuid.uuid4().hex[:8]}",
+                rule_id="RULE_ENGINE",
+                issue_type="RULE_ENGINE_FATAL_ERROR",
+                severity=Severity.WARNING,
+                description=f"Rule engine encountered a fatal error: {exc}",
+                location=LocationReference(view_name="N/A", coordinates=None, label=None),
+            ))
+
+        self._logger.info(
+            json.dumps({
+                "component": "AnalysisPipeline",
+                "drawing_id": drawing_id,
+                "issues_total": len(issues),
+                "issues_critical": sum(1 for i in issues if i.severity == Severity.CRITICAL),
+                "issues_warning": sum(1 for i in issues if i.severity == Severity.WARNING),
+            })
+        )
 
         # Stage 5: Report generation
         return self._report_generator.generate(
-            model=model,
-            issues=issues,
-            format=report_format,
+            model=model, issues=issues, format=report_format
         )
 
     # ------------------------------------------------------------------

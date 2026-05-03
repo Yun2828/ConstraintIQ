@@ -201,78 +201,21 @@ class SymbolDetector:
         model: GeometricModel,
         raster_image: Optional[bytes] = None,
     ) -> list[DetectedSymbol]:
-        """Run symbol detection over *model* and an optional *raster_image*.
-
-        When the DPSS model is unavailable, falls back to a heuristic
-        vector-only mode that derives ``DetectedSymbol`` objects from the
-        ``GeometricModel``'s existing parsed data.
-
-        When *raster_image* is ``None``, vector-only mode is used regardless
-        of whether the model is loaded.
-
-        Args:
-            model:        The ``GeometricModel`` to analyse.
-            raster_image: Optional raster rendering of the drawing (PNG/JPEG
-                          bytes).  Enables the dual-pathway fusion path.
-
-        Returns:
-            A list of ``DetectedSymbol`` objects whose ``confidence`` is at or
-            above ``self.confidence_threshold``.
-        """
-        if not self._model_available:
-            return self._heuristic_detect(model)
-
-        # --- ML inference path (future implementation) ---
-        if raster_image is None:
-            # Vector-only mode even with a loaded model.
-            return self._heuristic_detect(model)
-
-        # When the model is available and a raster image is provided, run the
-        # full dual-pathway DPSS inference here.  For now this is unreachable
-        # because _load_weights always raises.
-        return self._heuristic_detect(model)  # pragma: no cover
+        """Heuristic-only detection — ML is disabled for MVP."""
+        logger.info("ML symbol detection disabled — using heuristic analysis")
+        return self._heuristic_detect(model)
 
     def enrich(
         self,
         model: GeometricModel,
         symbols: list[DetectedSymbol],
     ) -> tuple[GeometricModel, list[Issue]]:
-        """Merge *symbols* into *model*, updating ML confidence fields.
-
-        Confidence thresholding rules:
-
-        * ``confidence >= 0.8``: accepted unconditionally — update the
-          feature's ``ml_confidence`` and ``ml_symbol_type``.
-        * ``0.5 <= confidence < 0.8``: merged but flagged as tentative —
-          set ``ml_confidence`` on the feature; do **not** overwrite an
-          existing ``feature_type``.
-        * ``confidence < 0.5``: discarded entirely.
-
-        If the model was unavailable (``self._model_available is False``), a
-        ``WARNING`` ``Issue`` is appended to the returned issues list.
-
-        Args:
-            model:   The ``GeometricModel`` to enrich.
-            symbols: Detected symbols from ``detect()``.
-
-        Returns:
-            A ``(enriched_model, issues)`` tuple.
-        """
+        """Merge symbols into model — ML enrichment disabled for MVP."""
         issues: list[Issue] = []
-
-        # Build a fast lookup from feature id → Feature.
         feature_by_id: dict[str, Feature] = {f.id: f for f in model.features}
-
         for symbol in symbols:
-            if symbol.confidence < 0.5:
-                # Discard low-confidence detections entirely.
-                continue
-
-            if symbol.symbol_type == "FEATURE":
+            if symbol.confidence >= 0.5 and symbol.symbol_type == "FEATURE":
                 self._enrich_feature_symbol(symbol, feature_by_id)
-            # Other symbol types (DIMENSION, GDT_FCF, DATUM, TITLE_BLOCK) are
-            # recorded in the symbol's attributes but do not currently mutate
-            # the model's sub-objects — they are available for downstream use.
 
         if not self._model_available:
             issues.append(
