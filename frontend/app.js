@@ -478,17 +478,7 @@ function renderResults(report) {
     scoreLabel.textContent = "Critical Issues";
   }
 
-  issueCountBadge.textContent = `${locatedIssues.length} issue${locatedIssues.length !== 1 ? "s" : ""}`;
-
-  // Summary chips — based on located issues only
-  const locHigh = locatedIssues.filter(i => i.severity === "high").length;
-  const locMed  = locatedIssues.filter(i => i.severity === "medium").length;
-  const locLow  = locatedIssues.filter(i => i.severity === "low").length;
-  summaryChips.innerHTML = `
-    ${locHigh ? `<span class="chip chip-high">● ${locHigh} Critical</span>` : ""}
-    ${locMed  ? `<span class="chip chip-medium">● ${locMed} Warning</span>` : ""}
-    ${locLow  ? `<span class="chip chip-low">● ${locLow} Info</span>` : ""}
-  `;
+  // Summary chips handled by renderOverlays section below
 
   // Release status
   releaseStatus.style.display = "block";
@@ -517,15 +507,32 @@ function renderResults(report) {
     panelIssues.parentElement.insertBefore(banner, panelIssues);
   }
 
-  // Overlays — only located issues get dots
+  // Render overlays first — this assigns sequential IDs 1,2,3...
   overlayContainer.innerHTML = "";
   _lastIssues = locatedIssues;
-  renderOverlays(locatedIssues);
+  const dotCount = renderOverlays(locatedIssues);
 
-  // Issue cards — only show located issues (those with dots on PDF)
+  // Panel shows ONLY the issues that got a dot (renderOverlays updated their .id)
+  // Filter to just those with a valid sequential id
+  const panelIssues_list = locatedIssues.filter(i => i.id != null && i.id > 0);
+
+  // Update badge to match dot count
+  issueCountBadge.textContent = `${panelIssues_list.length} issue${panelIssues_list.length !== 1 ? "s" : ""}`;
+
+  // Summary chips
+  const locHigh = panelIssues_list.filter(i => i.severity === "high").length;
+  const locMed  = panelIssues_list.filter(i => i.severity === "medium").length;
+  const locLow  = panelIssues_list.filter(i => i.severity === "low").length;
+  summaryChips.innerHTML = `
+    ${locHigh ? `<span class="chip chip-high">● ${locHigh} Critical</span>` : ""}
+    ${locMed  ? `<span class="chip chip-medium">● ${locMed} Warning</span>` : ""}
+    ${locLow  ? `<span class="chip chip-low">● ${locLow} Info</span>` : ""}
+  `;
+
+  // Issue cards
   panelIssues.innerHTML = "";
 
-  if (!locatedIssues.length) {
+  if (!panelIssues_list.length) {
     panelIssues.innerHTML = `
       <div class="issues-placeholder">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">
@@ -536,7 +543,7 @@ function renderResults(report) {
     return;
   }
 
-  locatedIssues.forEach(issue => {
+  panelIssues_list.forEach(issue => {
     const card = document.createElement("div");
     card.className = `issue-card severity-${issue.severity}`;
     card.dataset.id = issue.id;
@@ -569,7 +576,7 @@ function renderResults(report) {
     panelIssues.appendChild(card);
   });
 
-  if (locatedIssues.length) setTimeout(() => selectIssue(locatedIssues[0].id), 200);
+  if (panelIssues_list.length) setTimeout(() => selectIssue(panelIssues_list[0].id), 200);
 }
 
 // ─── Select issue ─────────────────────────────────────────────────────────────
@@ -766,56 +773,49 @@ function renderOverlays(issues) {
   const pdfCanvas = document.getElementById("pdfCanvas");
   if (!pdfCanvas || pdfCanvas.width === 0) return;
 
-  // Title-block-level issues — no dot on drawing
   const TITLE_BLOCK_TYPES = new Set([
-    "MISSING_TITLE_BLOCK_PART_NUMBER",
-    "MISSING_TITLE_BLOCK_REVISION",
-    "MISSING_TITLE_BLOCK_MATERIAL",
-    "MISSING_TITLE_BLOCK_SCALE",
-    "MISSING_TITLE_BLOCK_UNITS",
-    "MISSING_DATUM_REFERENCE_FRAME",
-    "INCOMPLETE_DATUM_REFERENCE_FRAME",
-    "DATUM_SYMBOL_NO_FEATURE",
-    "DATUM_SYMBOL_ON_NON_PHYSICAL_FEATURE",
-    "NO_ORTHOGRAPHIC_VIEWS",
-    "INSUFFICIENT_DATA_EXTRACTED",
-    "NOTE_UNIT_SYSTEM_CONTRADICTION",
+    "MISSING_TITLE_BLOCK_PART_NUMBER", "MISSING_TITLE_BLOCK_REVISION",
+    "MISSING_TITLE_BLOCK_MATERIAL", "MISSING_TITLE_BLOCK_SCALE",
+    "MISSING_TITLE_BLOCK_UNITS", "MISSING_DATUM_REFERENCE_FRAME",
+    "INCOMPLETE_DATUM_REFERENCE_FRAME", "DATUM_SYMBOL_NO_FEATURE",
+    "DATUM_SYMBOL_ON_NON_PHYSICAL_FEATURE", "NO_ORTHOGRAPHIC_VIEWS",
+    "INSUFFICIENT_DATA_EXTRACTED", "NOTE_UNIT_SYSTEM_CONTRADICTION",
   ]);
 
-  // Drawing body = top 80% of page (title block occupies bottom ~20%)
   const drawingBodyMaxY = pdfCanvas.height * 0.82;
 
-  let dotCount = 0;
-  issues.forEach((issue, idx) => {
-    // Skip title-block-level issues — they have no meaningful drawing location
+  // First pass: collect all renderable dots
+  const renderable = [];
+  issues.forEach(issue => {
     if (TITLE_BLOCK_TYPES.has(issue._issueType)) return;
-
     const coords = issue._rawCoords;
     if (!coords || coords.x == null || coords.y == null) return;
-
-    // PDF coords: origin bottom-left, y up → canvas: origin top-left, y down
     const canvasX = coords.x * _canvasScale + _canvasOffsetX;
     const canvasY = (_pdfPageHeight - coords.y) * _canvasScale + _canvasOffsetY;
-
-    // Skip dots in the title block area (bottom of page)
     if (canvasY > drawingBodyMaxY) return;
-
-    // Skip dots outside canvas bounds
     if (canvasX < 0 || canvasY < 0 ||
         canvasX > pdfCanvas.width + _canvasOffsetX ||
         canvasY > pdfCanvas.height + _canvasOffsetY) return;
+    renderable.push({ issue, canvasX, canvasY });
+  });
+
+  // Second pass: assign sequential numbers 1,2,3... and render
+  renderable.forEach(({ issue, canvasX, canvasY }, idx) => {
+    const num = idx + 1;
+    issue.id = num; // keep in sync with panel
 
     const dot = document.createElement("div");
     dot.className = "issue-overlay";
     dot.style.left = `${canvasX}px`;
     dot.style.top  = `${canvasY}px`;
     dot.style.pointerEvents = "all";
-    dot.innerHTML = `<div class="overlay-marker severity-${issue.severity}" data-id="${issue.id}" title="${issue.title}">${idx + 1}</div>`;
-    dot.addEventListener("click", () => selectIssue(issue.id));
+    dot.innerHTML = `<div class="overlay-marker severity-${issue.severity}" data-id="${num}" title="${issue.title}">${num}</div>`;
+    dot.addEventListener("click", () => selectIssue(num));
     overlayContainer.appendChild(dot);
-    dotCount++;
   });
-  console.log(`renderOverlays: ${dotCount} dots placed out of ${issues.length} issues`);
+
+  console.log(`renderOverlays: ${renderable.length} dots`);
+  return renderable.length;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
