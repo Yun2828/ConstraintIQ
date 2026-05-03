@@ -1,0 +1,136 @@
+{
+  "fixture_id": "plate_drawing",
+  "description": "Synthetic flat plate drawing with flatness GD&T, multiple dimensions, and complete title block",
+  "expected_detections": [
+    {
+      "symbol_type": "FEATURE",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F0"],
+      "attributes": {
+        "feature_type": "SURFACE"
+      }
+    },
+    {
+      "symbol_type": "FEATURE",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F1"],
+      "attributes": {
+        "feature_type": "EDGE"
+      }
+    },
+    {
+      "symbol_type": "FEATURE",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F2"],
+      "attributes": {
+        "feature_type": "HOLE"
+      }
+    },
+    {
+      "symbol_type": "DIMENSION",
+      "min_confidence": 0.8,
+      "primitive_ids": ["D0"],
+      "attributes": {
+        "value": 100.0,
+        "unit": "mm"
+      }
+    },
+    {
+      "symbol_type": "DIMENSION",
+      "min_confidence": 0.8,
+      "primitive_ids": ["D1"],
+      "attributes": {
+        "value": 75.0,
+        "unit": "mm"
+      }
+    },
+    {
+      "symbol_type": "DIMENSION",
+      "min_confidence": 0.8,
+      "primitive_ids": ["D2"],
+      "attributes": {
+        "value": 10.0,
+        "unit": "mm"
+      }
+    },
+    {
+      "symbol_type": "GDT_FCF",
+      "min_confidence": 0.8,
+      "primitive_ids": ["FCF0"],
+      "attributes": {
+        "gdt_symbol": "\u25b1",
+        "datum_references": []
+      }
+    },
+    {
+      "symbol_type": "DATUM",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F0"],
+      "attributes": {
+        "label": "A",
+        "feature_id": "F0"
+      }
+    },
+    {
+      "symbol_type": "DATUM",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F1"],
+      "attributes": {
+        "label": "B",
+        "feature_id": "F1"
+      }
+    },
+    {
+      "symbol_type": "TITLE_BLOCK",
+      "min_confidence": 0.8,
+      "primitive_ids": [],
+      "attributes": {
+        "part_number": "PLT-003",
+        "revision": "C",
+        "material": "STAINLESS STEEL 316",
+        "scale": "1:1",
+        "units": "mm"
+      }
+    }
+  ],
+  "expected_enriched_model": {
+    "features": [
+      {
+        "id": "F0",
+        "feature_type": "SURFACE",
+        "is_threaded": false,
+        "is_blind_hole": false,
+        "has_dimensions": true,
+        "has_feature_control_frames": true
+      },
+      {
+        "id": "F1",
+        "feature_type": "EDGE",
+        "is_threaded": false,
+        "is_blind_hole": false,
+        "has_dimensions": true,
+        "has_feature_control_frames": false
+      },
+      {
+        "id": "F2",
+        "feature_type": "HOLE",
+        "is_threaded": false,
+        "is_blind_hole": false,
+        "has_dimensions": true,
+        "has_feature_control_frames": false
+      }
+    ],
+    "feature_control_frames": [
+      {
+        "id": "FCF0",
+        "gdt_symbol": "\u25b1",
+        "datum_references": []
+      }
+    ],
+    "title_block": {
+      "part_number": "PLT-003",
+      "revision": "C",
+      "material": "STAINLESS STEEL 316"
+    }
+  }
+}

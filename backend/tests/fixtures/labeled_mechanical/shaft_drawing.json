@@ -1,0 +1,102 @@
+{
+  "fixture_id": "shaft_drawing",
+  "description": "Synthetic mechanical shaft drawing with runout GD&T, diameter dimensions, and title block",
+  "expected_detections": [
+    {
+      "symbol_type": "FEATURE",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F0"],
+      "attributes": {
+        "feature_type": "SURFACE"
+      }
+    },
+    {
+      "symbol_type": "FEATURE",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F1"],
+      "attributes": {
+        "feature_type": "HOLE"
+      }
+    },
+    {
+      "symbol_type": "DIMENSION",
+      "min_confidence": 0.8,
+      "primitive_ids": ["D0"],
+      "attributes": {
+        "value": 38.1,
+        "unit": "mm"
+      }
+    },
+    {
+      "symbol_type": "DIMENSION",
+      "min_confidence": 0.8,
+      "primitive_ids": ["D1"],
+      "attributes": {
+        "value": 12.7,
+        "unit": "mm"
+      }
+    },
+    {
+      "symbol_type": "GDT_FCF",
+      "min_confidence": 0.8,
+      "primitive_ids": ["FCF0"],
+      "attributes": {
+        "gdt_symbol": "\u2197",
+        "datum_references": ["A"]
+      }
+    },
+    {
+      "symbol_type": "DATUM",
+      "min_confidence": 0.8,
+      "primitive_ids": ["F0"],
+      "attributes": {
+        "label": "A",
+        "feature_id": "F0"
+      }
+    },
+    {
+      "symbol_type": "TITLE_BLOCK",
+      "min_confidence": 0.8,
+      "primitive_ids": [],
+      "attributes": {
+        "part_number": "SHF-002",
+        "revision": "A",
+        "material": "STEEL 4140",
+        "scale": "1:1",
+        "units": "mm"
+      }
+    }
+  ],
+  "expected_enriched_model": {
+    "features": [
+      {
+        "id": "F0",
+        "feature_type": "SURFACE",
+        "is_threaded": false,
+        "is_blind_hole": false,
+        "has_dimensions": true,
+        "has_feature_control_frames": false
+      },
+      {
+        "id": "F1",
+        "feature_type": "HOLE",
+        "is_threaded": false,
+        "is_blind_hole": true,
+        "has_dimensions": true,
+        "has_feature_control_frames": true
+      }
+    ],
+    "feature_control_frames": [
+      {
+        "id": "FCF0",
+        "gdt_symbol": "\u2197",
+        "datum_references": ["A"]
+      }
+    ],
+    "title_block": {
+      "part_number": "SHF-002",
+      "revision": "A",
+      "material": "STEEL 4140"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: constraint-iq-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: PORT
+        value: "8000"
