@@ -713,6 +713,17 @@ body {
 .issue-card.active .issue-fix-box { display: block; }
 .issue-fix-box strong { color: #bfdbfe; }
 
+.general-issues-divider {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-dim);
+  padding: 8px 4px 4px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
 /* ─── Loading Overlay ───────────────────────────────────────────── */
 .loading-overlay {
   position: fixed;

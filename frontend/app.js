@@ -402,45 +402,52 @@ function clearResults() {
 }
 
 function renderResults(report) {
-  // Normalise issues into the shape the UI expects
-  // First compute the bounding box of all issue coordinates for normalization
-  const rawCoords = (report.issues || [])
-    .map(i => i.location && i.location.coordinates)
-    .filter(c => c && c.x != null && c.y != null);
+  // Title-block / drawing-level issue types — no dot, shown separately
+  const DRAWING_LEVEL_TYPES = new Set([
+    "MISSING_TITLE_BLOCK_PART_NUMBER", "MISSING_TITLE_BLOCK_REVISION",
+    "MISSING_TITLE_BLOCK_MATERIAL", "MISSING_TITLE_BLOCK_SCALE",
+    "MISSING_TITLE_BLOCK_UNITS", "MISSING_DATUM_REFERENCE_FRAME",
+    "INCOMPLETE_DATUM_REFERENCE_FRAME", "DATUM_SYMBOL_NO_FEATURE",
+    "DATUM_SYMBOL_ON_NON_PHYSICAL_FEATURE", "NO_ORTHOGRAPHIC_VIEWS",
+    "INSUFFICIENT_DATA_EXTRACTED", "NOTE_UNIT_SYSTEM_CONTRADICTION",
+  ]);
 
-  let pageBounds = null;
-  if (rawCoords.length > 0) {
-    const xs = rawCoords.map(c => c.x);
-    const ys = rawCoords.map(c => c.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    pageBounds = {
-      minX, minY,
-      rangeX: maxX - minX || 1,
-      rangeY: maxY - minY || 1,
-    };
-  }
-
-  const issues = (report.issues || [])
-    .filter(issue => issue.issue_type !== "ML_UNAVAILABLE")
-    .map((issue, idx) => ({
-      id: idx + 1,
-      title: formatIssueTitle(issue.issue_type),
-      severity: mapSeverity(issue.severity),
+  // Map all issues
+  const allIssues = (report.issues || [])
+    .filter(i => i.issue_type !== "ML_UNAVAILABLE")
+    .map(issue => ({
+      title:       formatIssueTitle(issue.issue_type),
+      severity:    mapSeverity(issue.severity),
       _rawSeverity: issue.severity,
-      _issueType: issue.issue_type,
-      category: formatIssueTitle(issue.issue_type),
+      _issueType:  issue.issue_type,
       description: issue.description || "",
-      fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
+      fix:         issue.corrective_action || "Refer to ANSI/ASME Y14.5.",
       standardRef: issue.standard_reference || "",
-      _rawCoords: issue.location && issue.location.coordinates
-        ? { x: issue.location.coordinates.x, y: issue.location.coordinates.y }
-        : null,
+      _rawCoords:  issue.location && issue.location.coordinates
+                     ? { x: issue.location.coordinates.x, y: issue.location.coordinates.y }
+                     : null,
+      _isDrawingLevel: DRAWING_LEVEL_TYPES.has(issue.issue_type),
     }));
 
-  const highCount   = issues.filter((i) => i.severity === "high").length;
-  const medCount    = issues.filter((i) => i.severity === "medium").length;
-  const lowCount    = issues.filter((i) => i.severity === "low").length;
+  // Split: located issues get dots + sequential numbers
+  // Drawing-level issues shown below without numbers
+  const locatedIssues = allIssues.filter(i => !i._isDrawingLevel && i._rawCoords);
+  const generalIssues = allIssues.filter(i => i._isDrawingLevel || !i._rawCoords);
+
+  // Assign sequential IDs only to located issues
+  locatedIssues.forEach((issue, idx) => { issue.id = idx + 1; });
+  // General issues get no dot number
+  generalIssues.forEach((issue, idx) => { issue.id = null; });
+
+  const issues = locatedIssues; // dots on PDF
+
+  // Score uses ALL issues for accuracy
+  const allHigh = allIssues.filter(i => i.severity === "high").length;
+  const allMed  = allIssues.filter(i => i.severity === "medium").length;
+  const allLow  = allIssues.filter(i => i.severity === "low").length;
+  const highCount = allHigh;
+  const medCount  = allMed;
+  const lowCount  = allLow;
 
   // Score: start at 100, deduct based on severity
   // Critical issues are weighted heavily, warnings moderately, info lightly
@@ -471,7 +478,7 @@ function renderResults(report) {
     scoreLabel.textContent = "Critical Issues";
   }
 
-  issueCountBadge.textContent = `${issues.length} issue${issues.length !== 1 ? "s" : ""}`;
+  issueCountBadge.textContent = `${locatedIssues.length} issue${locatedIssues.length !== 1 ? "s" : ""}`;
 
   // Release status
   releaseStatus.style.display = "block";
@@ -505,15 +512,15 @@ function renderResults(report) {
     panelIssues.parentElement.insertBefore(banner, panelIssues);
   }
 
-  // Overlays on drawing — only show dots for issues with real coordinates
+  // Overlays — only located issues get dots
   overlayContainer.innerHTML = "";
-  _lastIssues = issues;
-  renderOverlays(issues);
+  _lastIssues = locatedIssues;
+  renderOverlays(locatedIssues);
 
   // Issue cards
   panelIssues.innerHTML = "";
 
-  if (!issues.length) {
+  if (!locatedIssues.length && !generalIssues.length) {
     panelIssues.innerHTML = `
       <div class="issues-placeholder">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">
@@ -524,27 +531,27 @@ function renderResults(report) {
     return;
   }
 
-  issues.forEach((issue, idx) => {
-    const num = idx + 1;
+  function makeCard(issue) {
     const card = document.createElement("div");
     card.className = `issue-card severity-${issue.severity}`;
-    card.dataset.id = issue.id;
-
+    if (issue.id !== null) card.dataset.id = issue.id;
     const costLabel = costImpactFromSeverity(issue._rawSeverity);
     const rfiLabel  = rfiRiskFromSeverity(issue._rawSeverity);
-    const category  = issue.category;
-
+    const numBadge  = issue.id !== null
+      ? `<div class="issue-number-badge severity-${issue.severity}">${issue.id}</div>`
+      : `<div class="issue-number-badge severity-low">—</div>`;
     card.innerHTML = `
       <div class="issue-card-header">
-        <span class="issue-title">${num}. ${issue.title}</span>
-        <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
+        ${numBadge}
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="issue-title">${issue.title}</span>
+            <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
+          </div>
+        </div>
       </div>
       <p class="issue-desc">${issue.description}</p>
       <div class="issue-meta-row">
-        <span class="issue-meta-item">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
-          ${category}
-        </span>
         <span class="issue-meta-item">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           ${costLabel}
@@ -558,11 +565,23 @@ function renderResults(report) {
         <strong>Suggested Fix:</strong> ${issue.fix}
       </div>
     `;
-    card.addEventListener("click", () => selectIssue(issue.id));
-    panelIssues.appendChild(card);
-  });
+    if (issue.id !== null) card.addEventListener("click", () => selectIssue(issue.id));
+    return card;
+  }
 
-  if (issues.length) setTimeout(() => selectIssue(issues[0].id), 200);
+  // Numbered located issues first
+  locatedIssues.forEach(issue => panelIssues.appendChild(makeCard(issue)));
+
+  // General issues (no dot) in a separate section
+  if (generalIssues.length) {
+    const divider = document.createElement("div");
+    divider.className = "general-issues-divider";
+    divider.textContent = "Drawing-level issues";
+    panelIssues.appendChild(divider);
+    generalIssues.forEach(issue => panelIssues.appendChild(makeCard(issue)));
+  }
+
+  if (locatedIssues.length) setTimeout(() => selectIssue(locatedIssues[0].id), 200);
 }
 
 // ─── Select issue ─────────────────────────────────────────────────────────────
