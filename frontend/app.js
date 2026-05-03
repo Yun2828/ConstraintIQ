@@ -427,9 +427,11 @@ function renderResults(report) {
       id: idx + 1,
       title: formatIssueTitle(issue.issue_type),
       severity: mapSeverity(issue.severity),
+      _rawSeverity: issue.severity,
+      category: formatIssueTitle(issue.issue_type),
+      description: issue.description || "",
       fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
       standardRef: issue.standard_reference || "",
-      // Attach raw PDF coordinates for overlay dot placement
       _rawCoords: issue.location && issue.location.coordinates
         ? { x: issue.location.coordinates.x, y: issue.location.coordinates.y }
         : null,
@@ -504,7 +506,7 @@ function renderResults(report) {
 
   // Overlays on drawing — only show dots for issues with real coordinates
   overlayContainer.innerHTML = "";
-  if (lastReport) lastReport._cachedIssues = issues;
+  _lastIssues = issues;
   renderOverlays(issues);
 
   // Issue cards
@@ -526,15 +528,33 @@ function renderResults(report) {
     const card = document.createElement("div");
     card.className = `issue-card severity-${issue.severity}`;
     card.dataset.id = issue.id;
+
+    const costLabel = costImpactFromSeverity(issue._rawSeverity);
+    const rfiLabel  = rfiRiskFromSeverity(issue._rawSeverity);
+    const category  = issue.category;
+
     card.innerHTML = `
       <div class="issue-card-header">
-        <div class="issue-number-badge severity-${issue.severity}">${num}</div>
-        <span class="issue-title">${issue.title}</span>
+        <span class="issue-title">${num}. ${issue.title}</span>
         <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
       </div>
-      <div class="issue-fix">
-        <span class="issue-fix-label">Fix</span>
-        <span>${issue.fix}</span>
+      <p class="issue-desc">${issue.description}</p>
+      <div class="issue-meta-row">
+        <span class="issue-meta-item">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
+          ${category}
+        </span>
+        <span class="issue-meta-item">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          ${costLabel}
+        </span>
+        <span class="issue-meta-item">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Supplier RFI Risk: ${rfiLabel}
+        </span>
+      </div>
+      <div class="issue-fix-box">
+        <strong>Suggested Fix:</strong> ${issue.fix}
       </div>
     `;
     card.addEventListener("click", () => selectIssue(issue.id));
@@ -668,11 +688,12 @@ function issueLocation(issue, idx, allIssues) {
 }
 
 // ─── PDF.js viewer state ──────────────────────────────────────────
-let _pdfPageWidth  = 1;   // PDF page width in PDF points
-let _pdfPageHeight = 1;   // PDF page height in PDF points
-let _canvasOffsetX = 0;   // canvas left offset within the wrap div
-let _canvasOffsetY = 0;   // canvas top offset within the wrap div
-let _canvasScale   = 1;   // CSS pixels per PDF point
+let _lastIssues    = []; // global cache for re-render after PDF loads
+let _pdfPageWidth  = 1;
+let _pdfPageHeight = 1;
+let _canvasOffsetX = 0;
+let _canvasOffsetY = 0;
+let _canvasScale   = 1;
 
 // ─── Load file into viewer ────────────────────────────────────────
 function loadFileIntoViewer(file) {
@@ -718,8 +739,8 @@ function loadFileIntoViewer(file) {
         const ctx = pdfCanvas.getContext("2d");
         await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
 
-        // Re-render overlays if report already loaded
-        if (lastReport) renderOverlays(lastReport._cachedIssues || []);
+        // Re-render overlays now that canvas dimensions are known
+        renderOverlays(_lastIssues);
       } catch (err) {
         console.error("PDF.js render error:", err);
       }
