@@ -13,7 +13,6 @@ and the spatial layout, producing far more accurate results than image-only.
 from __future__ import annotations
 
 import base64
-import io
 import json
 import logging
 import re
@@ -80,40 +79,30 @@ Rules:
 # ---------------------------------------------------------------------------
 
 def _extract_text_with_coords(pdf_bytes: bytes) -> str:
-    """Extract all text from the first PDF page with bounding box coordinates."""
+    """Extract all text from the first PDF page with bounding box coordinates using PyMuPDF."""
     try:
-        import pdfplumber
-    except ImportError:
-        logger.warning("pdfplumber not installed, skipping text extraction")
-        return ""
-
-    try:
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            if not pdf.pages:
-                return ""
-            page = pdf.pages[0]
-            words = page.extract_words(
-                x_tolerance=3,
-                y_tolerance=3,
-                keep_blank_chars=False,
-                use_text_flow=False,
-            )
-            if not words:
-                return ""
-
-            lines = ["Extracted text with positions (x0, y0, x1, y1):"]
-            for w in words:
-                x0 = round(w.get("x0", 0), 1)
-                y0 = round(w.get("top", 0), 1)
-                x1 = round(w.get("x1", 0), 1)
-                y1 = round(w.get("bottom", 0), 1)
-                text = w.get("text", "").strip()
-                if text:
+        import fitz
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if doc.page_count == 0:
+            return ""
+        page = doc[0]
+        blocks = page.get_text("dict").get("blocks", [])
+        lines = ["Extracted text with positions (x0, y0, x1, y1):"]
+        for block in blocks:
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    text = span.get("text", "").strip()
+                    if not text:
+                        continue
+                    bbox = span.get("bbox", [0, 0, 0, 0])
+                    x0, y0, x1, y1 = [round(v, 1) for v in bbox]
                     lines.append(f"  [{x0},{y0},{x1},{y1}] {text}")
-
-            return "\n".join(lines)
+        doc.close()
+        return "\n".join(lines)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("pdfplumber extraction failed: %s", exc)
+        logger.warning("Text extraction failed: %s", exc)
         return ""
 
 
@@ -164,7 +153,7 @@ def analyze_with_gemini(
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-pro")
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
         # Channel 1: high-res image
         image_bytes = _pdf_page_to_png_bytes(file_bytes)
