@@ -102,6 +102,7 @@ fileInput.addEventListener("change", (e) => {
   uploadedFileName = file.name;
   uploadedFile = file;
   saveProject(file.name);
+  saveProjectPdf(file.name, file);  // cache PDF for history
   fileInput.value = "";
   showDashboard();
   openProjectInWorkspace(file.name, file);
@@ -115,27 +116,50 @@ analyzeBtn.addEventListener("click", () => {
 // ─── Open a project in the workspace ─────────────────────────────────────────
 function openProjectInWorkspace(filename, file) {
   activeProjectFilename = filename;
-  uploadedFile = file || null;
   viewerFilename.textContent = filename;
   partName.textContent = filename.replace(/\.[^.]+$/, "").toUpperCase().replace(/[-_]/g, " ");
 
   dashEmptyState.style.display = "none";
   workspace.style.display = "grid";
 
-  analysisRun = false;
-  lastReport = null;
-  clearResults();
-
-  // Load the real file into the viewer
-  loadFileIntoViewer(file || null);
-
   document.querySelectorAll(".dash-project-item").forEach((el) => {
     el.classList.toggle("active", el.dataset.filename === filename);
   });
 
-  // Auto-run analysis if we have the file object
+  // If we have the actual file object, use it directly
   if (file) {
+    uploadedFile = file;
+    analysisRun = false;
+    lastReport = null;
+    clearResults();
+    loadFileIntoViewer(file);
     runAnalysis();
+    return;
+  }
+
+  // Try to restore from cache
+  const cachedReport = getProjectReport(filename);
+  const cachedFile   = getProjectPdfAsFile(filename);
+
+  if (cachedFile) {
+    uploadedFile = cachedFile;
+    loadFileIntoViewer(cachedFile);
+  } else {
+    uploadedFile = null;
+    loadFileIntoViewer(null);
+  }
+
+  if (cachedReport) {
+    // Restore previous analysis results
+    analysisRun = true;
+    lastReport = cachedReport;
+    clearResults();
+    renderResults(cachedReport);
+  } else {
+    // No cached report — show empty state, let user re-analyze
+    analysisRun = false;
+    lastReport = null;
+    clearResults();
   }
 }
 
@@ -153,9 +177,60 @@ function saveProject(filename) {
   localStorage.setItem("ciq_projects", JSON.stringify(projects.slice(0, 10)));
 }
 
+function saveProjectReport(filename, report) {
+  try {
+    localStorage.setItem(`ciq_report_${filename}`, JSON.stringify(report));
+  } catch (e) {
+    // localStorage full — silently skip caching
+    console.warn("Could not cache report:", e);
+  }
+}
+
+function getProjectReport(filename) {
+  try {
+    const raw = localStorage.getItem(`ciq_report_${filename}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveProjectPdf(filename, file) {
+  // Store PDF as base64 in localStorage (works for files < ~3MB)
+  try {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        localStorage.setItem(`ciq_pdf_${filename}`, e.target.result);
+      } catch (err) {
+        console.warn("PDF too large to cache in localStorage:", err);
+      }
+    };
+    reader.readAsDataURL(file);
+  } catch (e) {
+    console.warn("Could not cache PDF:", e);
+  }
+}
+
+function getProjectPdfAsFile(filename) {
+  try {
+    const dataUrl = localStorage.getItem(`ciq_pdf_${filename}`);
+    if (!dataUrl) return null;
+    // Convert base64 data URL back to a File object
+    const arr = dataUrl.split(",");
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) u8arr[n] = bstr.charCodeAt(n);
+    return new File([u8arr], filename, { type: mime });
+  } catch { return null; }
+}
+
 function deleteProject(filename) {
   const projects = getProjects().filter((p) => p.filename !== filename);
   localStorage.setItem("ciq_projects", JSON.stringify(projects));
+  // Clean up cached report and PDF
+  localStorage.removeItem(`ciq_report_${filename}`);
+  localStorage.removeItem(`ciq_pdf_${filename}`);
   if (activeProjectFilename === filename) {
     activeProjectFilename = null;
     uploadedFile = null;
@@ -370,6 +445,8 @@ async function runAnalysis() {
       loadingOverlay.style.display = "none";
       analyzeBtn.style.display = "";  // restore button
       analysisRun = true;
+      // Cache report and PDF for history
+      saveProjectReport(activeProjectFilename, report);
       renderResults(report);
     }, 300);
 
