@@ -531,19 +531,15 @@ function renderResults(report) {
     card.innerHTML = `
       <div class="issue-card-header">
         <div class="issue-number-badge severity-${issue.severity}">${num}</div>
-        <span class="issue-title">${issue.title}</span>
-        <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
+        <div class="issue-card-title-wrap">
+          <span class="issue-title">${issue.title}</span>
+          <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
+        </div>
       </div>
       <p class="issue-desc">${issue.description}</p>
       <div class="issue-fix">
-        <strong>Suggested Fix:</strong> ${issue.fix}
-      </div>
-      <div class="issue-meta">
-        ${issue.standardRef ? `<span class="issue-meta-item">📐 ${issue.standardRef}</span>` : ""}
-        <span class="issue-meta-item">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          RFI Risk: ${issue.rfiRisk}
-        </span>
+        <span class="issue-fix-label">Fix</span>
+        <span>${issue.fix}</span>
       </div>
     `;
     card.addEventListener("click", () => selectIssue(issue.id));
