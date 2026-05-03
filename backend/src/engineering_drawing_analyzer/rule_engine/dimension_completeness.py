@@ -138,8 +138,26 @@ class SizeDimensionRule:
         """Return one ``CRITICAL`` issue for each feature that lacks a size dimension."""
         issues: list[Issue] = []
 
+        # Build a map of feature_id → dimensions that reference it
+        # (from both feature.dimensions and top-level model.dimensions)
+        from collections import defaultdict
+        feature_dims: dict[str, list[Dimension]] = defaultdict(list)
+        for dim in model.dimensions:
+            for fid in dim.associated_feature_ids:
+                feature_dims[fid].append(dim)
         for feature in model.features:
-            has_size_dim = any(_is_size_dimension(d) for d in feature.dimensions)
+            for dim in feature.dimensions:
+                feature_dims[feature.id].append(dim)
+
+        # Only check features that are meaningful geometry types
+        # Skip LINE/POLYLINE/PATH — these are construction geometry, not features
+        _SKIP_TYPES = {"LINE", "POLYLINE", "PATH"}
+
+        for feature in model.features:
+            if feature.feature_type.upper() in _SKIP_TYPES:
+                continue
+            all_dims = feature_dims[feature.id]
+            has_size_dim = any(_is_size_dimension(d) for d in all_dims)
             if not has_size_dim:
                 issues.append(
                     Issue(
@@ -148,21 +166,22 @@ class SizeDimensionRule:
                         issue_type="MISSING_SIZE_DIMENSION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature '{feature.id}' (type: {feature.feature_type}) "
-                            "has no size dimension.  Every feature must have at least "
-                            "one dimension specifying its size (length, diameter, "
-                            "radius, etc.)."
+                            f"{feature.feature_type} feature at "
+                            f"{feature.location.view_name if feature.location else 'unknown location'} "
+                            "has no size dimension. Every feature must have at least "
+                            "one dimension specifying its size (length, diameter, radius, etc.)."
                         ),
                         location=_feature_location(feature),
                         corrective_action=(
-                            "Add a size dimension to this feature that specifies its "
-                            "physical extent (e.g. a linear dimension for a slot, a "
-                            "diameter callout for a hole).  Ensure the dimension value "
-                            "and unit are clearly annotated on the drawing."
+                            "Add a size dimension to this feature specifying its "
+                            "physical extent (e.g. diameter callout for a hole, "
+                            "linear dimension for a slot or surface)."
                         ),
                         standard_reference="ASME Y14.5-2018 §7.2",
                     )
                 )
+
+        return issues
 
         return issues
 
@@ -192,12 +211,6 @@ class PositionDimensionRule:
 
         # Collect datum labels defined in the model.
         datum_labels: set[str] = {d.label for d in model.datums}
-
-        # If no datums were extracted, skip position checks — we can't
-        # meaningfully verify position without a datum reference frame.
-        # DatumReferenceFrameRule handles the missing-datum case separately.
-        if not datum_labels and not model.dimensions:
-            return issues
 
         # Collect feature IDs that have at least one size dimension (fully
         # dimensioned features can serve as position references).

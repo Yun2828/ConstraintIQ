@@ -123,21 +123,26 @@ def _get_pipeline_logger() -> logging.Logger:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_RULES = [
+    # Dimension completeness — only fires on HOLE/CURVE/meaningful geometry
     SizeDimensionRule(),
     PositionDimensionRule(),
     OverDimensionRule(),
     AngularDimensionRule(),
+    # Geometric constraints
     DatumReferenceFrameRule(),
     FeatureOrientationRule(),
     GDTDatumReferenceRule(),
+    # Tolerance verification
     DimensionToleranceRule(),
     FCFCompletenessRule(),
     ToleranceStackUpRule(),
+    # Manufacturing readiness
     TitleBlockRule(),
     SurfaceFinishRule(),
     HoleSpecificationRule(),
     ViewSufficiencyRule(),
     NoteContradictionRule(),
+    # GD&T compliance
     GDTSymbolSetRule(),
     CompositeFCFRule(),
     DatumFeatureSymbolPlacementRule(),
@@ -378,7 +383,14 @@ class AnalysisPipeline:
         try:
             symbols = self._symbol_detector.detect(model)
             model, sd_issues = self._symbol_detector.enrich(model, symbols)
-            issues.extend(sd_issues)
+            # Missing DPSS weights are an internal capability signal, not a
+            # drawing-release defect. Keep the warning in SymbolDetector unit
+            # behavior, but do not surface it as a customer-facing issue.
+            issues.extend(
+                issue
+                for issue in sd_issues
+                if issue.issue_type != "ML_UNAVAILABLE"
+            )
         except Exception as exc:  # noqa: BLE001
             self._log_error(drawing_id=drawing_id, error_type=type(exc).__name__,
                             message=f"Symbol detection failed: {exc}", level=logging.WARNING)
@@ -386,7 +398,14 @@ class AnalysisPipeline:
         # Stage 4: Rule engine
         try:
             rule_issues = self._rule_engine.run(model)
-            issues.extend(rule_issues)
+            # Cap repeated issue types to max 5 each to avoid flooding
+            from collections import Counter
+            type_counts: Counter = Counter()
+            _MAX_PER_TYPE = 5
+            for issue in rule_issues:
+                if type_counts[issue.issue_type] < _MAX_PER_TYPE:
+                    issues.append(issue)
+                    type_counts[issue.issue_type] += 1
         except Exception as exc:  # noqa: BLE001
             self._log_error(drawing_id=drawing_id, error_type=type(exc).__name__,
                             message=f"Rule engine failed: {exc}", level=logging.ERROR)

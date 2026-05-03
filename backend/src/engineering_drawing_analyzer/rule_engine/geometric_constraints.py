@@ -160,8 +160,19 @@ class FeatureOrientationRule:
         """Return one ``CRITICAL`` issue for each feature with unconstrained DOF."""
         issues: list[Issue] = []
 
+        # Build feature → dimensions map from top-level dimensions
+        from collections import defaultdict
+        feature_dims: dict[str, list] = defaultdict(list)
+        for dim in model.dimensions:
+            for fid in dim.associated_feature_ids:
+                feature_dims[fid].append(dim)
+
+        _SKIP_TYPES = {"LINE", "POLYLINE", "PATH", "RECT"}
+
         for feature in model.features:
-            has_dimensions = bool(feature.dimensions)
+            if feature.feature_type.upper() in _SKIP_TYPES:
+                continue
+            has_dimensions = bool(feature.dimensions) or bool(feature_dims[feature.id])
             has_fcfs = bool(feature.feature_control_frames)
 
             if not has_dimensions and not has_fcfs:
@@ -173,23 +184,15 @@ class FeatureOrientationRule:
                         issue_type="UNCONSTRAINED_FEATURE_ORIENTATION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature '{feature.id}' (type: {feature.feature_type}) "
-                            "has no dimensions and no feature control frames.  Its "
-                            "orientation has unconstrained degrees of freedom — the "
-                            f"feature is located at {location.view_name} but its "
-                            "angular orientation relative to the Datum Reference Frame "
-                            "is undefined."
+                            f"{feature.feature_type} feature at "
+                            f"{location.view_name} has no dimensions or GD&T "
+                            "feature control frames. Its orientation is undefined."
                         ),
                         location=location,
                         corrective_action=(
-                            f"Add dimensions or GD&T feature control frames to "
-                            f"feature '{feature.id}' that fully constrain its "
-                            "orientation relative to the Datum Reference Frame.  "
-                            "For example, apply an orientation tolerance (parallelism, "
-                            "perpendicularity, or angularity) referencing the "
-                            "established datums, or add linear/angular dimensions "
-                            "that locate and orient the feature per ASME Y14.5-2018 "
-                            "§4.1 and §6.1."
+                            "Add dimensions or GD&T feature control frames to "
+                            "fully constrain this feature's orientation relative "
+                            "to the Datum Reference Frame."
                         ),
                         standard_reference="ASME Y14.5-2018 §4.1, §6.1",
                     )
@@ -222,13 +225,6 @@ class GDTDatumReferenceRule:
 
         # Build the set of defined datum labels from the model.
         defined_datum_labels: set[str] = {d.label for d in model.datums}
-
-        # If no datums were extracted at all, skip this rule — the parser
-        # may not have found datum symbols, so we can't distinguish "no datums
-        # defined" from "datums not extracted". DatumReferenceFrameRule handles
-        # the missing-datum case.
-        if not defined_datum_labels:
-            return issues
 
         # Check top-level feature control frames.
         all_fcfs = list(model.feature_control_frames)

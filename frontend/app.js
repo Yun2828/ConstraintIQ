@@ -421,7 +421,9 @@ function renderResults(report) {
     };
   }
 
-  const issues = (report.issues || []).map((issue, idx) => ({
+  const issues = (report.issues || [])
+    .filter(issue => issue.issue_type !== "ML_UNAVAILABLE")  // hide internal ML noise
+    .map((issue, idx) => ({
     id: idx + 1,
     title: formatIssueTitle(issue.issue_type),
     severity: mapSeverity(issue.severity),
@@ -577,6 +579,41 @@ function showError(message) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatIssueTitle(issueType) {
+  // Clean up internal rule names into human-readable titles
+  const titleMap = {
+    "MISSING_SIZE_DIMENSION": "Missing Size Dimension",
+    "MISSING_POSITION_DIMENSION": "Missing Position Dimension",
+    "MISSING_ANGULAR_DIMENSION": "Missing Angular Dimension",
+    "OVER_DIMENSION": "Redundant Dimension",
+    "MISSING_DATUM_REFERENCE_FRAME": "Missing Datum Reference Frame",
+    "INCOMPLETE_DATUM_REFERENCE_FRAME": "Incomplete Datum Reference Frame",
+    "UNCONSTRAINED_FEATURE_ORIENTATION": "Unconstrained Feature Orientation",
+    "UNDEFINED_DATUM_REFERENCE": "Undefined Datum Reference",
+    "MISSING_DIMENSION_TOLERANCE": "Missing Dimension Tolerance",
+    "MISSING_FCF_TOLERANCE_VALUE": "Incomplete GD&T Control Frame",
+    "MISSING_FCF_DATUM_REFERENCE": "Missing Datum in GD&T Frame",
+    "TOLERANCE_STACK_UP_VIOLATION": "Tolerance Stack-Up Issue",
+    "MISSING_TITLE_BLOCK_PART_NUMBER": "Missing Part Number",
+    "MISSING_TITLE_BLOCK_REVISION": "Missing Revision",
+    "MISSING_TITLE_BLOCK_MATERIAL": "Missing Material Specification",
+    "MISSING_TITLE_BLOCK_SCALE": "Missing Drawing Scale",
+    "MISSING_TITLE_BLOCK_UNITS": "Missing Units",
+    "MISSING_SURFACE_FINISH_CALLOUT": "Missing Surface Finish",
+    "HOLE_MISSING_DIAMETER": "Hole Missing Diameter",
+    "HOLE_MISSING_DEPTH": "Hole Missing Depth",
+    "HOLE_MISSING_TOLERANCE": "Hole Missing Tolerance",
+    "HOLE_MISSING_THREAD_SPEC": "Missing Thread Specification",
+    "NO_ORTHOGRAPHIC_VIEWS": "Insufficient Views",
+    "FEATURE_NOT_IN_ANY_VIEW": "Feature Not Shown in View",
+    "NOTE_DIMENSION_CONTRADICTION": "Note/Dimension Contradiction",
+    "NOTE_UNIT_SYSTEM_CONTRADICTION": "Unit System Conflict",
+    "NON_STANDARD_GDT_SYMBOL": "Non-Standard GD&T Symbol",
+    "COMPOSITE_FCF_INVALID_PLTZF_TOLERANCE": "Invalid Composite Tolerance",
+    "DATUM_SYMBOL_NO_FEATURE": "Datum Symbol Placement Issue",
+    "INSUFFICIENT_DATA_EXTRACTED": "Drawing Data Extraction Issue",
+    "ML_UNAVAILABLE": "Analysis Mode",
+  };
+  if (titleMap[issueType]) return titleMap[issueType];
   return (issueType || "Issue")
     .replace(/_/g, " ")
     .toLowerCase()
