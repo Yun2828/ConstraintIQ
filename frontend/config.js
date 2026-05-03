@@ -15,5 +15,5 @@
 // Allow the deployment pipeline to inject the real URL via a simple sed/envsubst
 // in the Vercel build command (see vercel.json).
 window.CONSTRAINT_IQ_CONFIG = {
-  backendUrl: window.__BACKEND_URL__ || "https://constraint-iq-backend.onrender.com",
+  backendUrl: window.__BACKEND_URL__ || "https://constraintiq.onrender.com",
 };
