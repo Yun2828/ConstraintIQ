@@ -531,12 +531,9 @@ function renderResults(report) {
     card.innerHTML = `
       <div class="issue-card-header">
         <div class="issue-number-badge severity-${issue.severity}">${num}</div>
-        <div class="issue-card-title-wrap">
-          <span class="issue-title">${issue.title}</span>
-          <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
-        </div>
+        <span class="issue-title">${issue.title}</span>
+        <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
       </div>
-      <p class="issue-desc">${issue.description}</p>
       <div class="issue-fix">
         <span class="issue-fix-label">Fix</span>
         <span>${issue.fix}</span>

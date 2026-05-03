@@ -166,10 +166,9 @@ class SizeDimensionRule:
                         issue_type="MISSING_SIZE_DIMENSION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature '{feature.id}' ({feature.feature_type}) at "
-                            f"{feature.location.view_name if feature.location else 'unknown location'} "
-                            "has no size dimension. Every feature must have at least "
-                            "one dimension specifying its size (length, diameter, radius, etc.)."
+                            f"A {feature.feature_type.lower()} feature has no size dimension. "
+                            "Every feature must have at least one dimension specifying "
+                            "its size (length, diameter, radius, etc.)."
                         ),
                         location=_feature_location(feature),
                         corrective_action=(
@@ -257,18 +256,15 @@ class PositionDimensionRule:
                         issue_type="MISSING_POSITION_DIMENSION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature '{feature.id}' (type: {feature.feature_type}) "
-                            "has no position dimension relative to a datum or a fully "
-                            "dimensioned feature.  Its location on the drawing is "
-                            "undefined."
+                            f"A {feature.feature_type.lower()} feature has no position "
+                            "dimension relative to a datum or reference feature. "
+                            "Its location on the drawing is undefined."
                         ),
                         location=_feature_location(feature),
                         corrective_action=(
-                            "Add a position dimension that locates this feature "
-                            "relative to an established datum (e.g. Datum A, B, or C) "
-                            "or another fully dimensioned feature.  Alternatively, "
-                            "apply a GD&T position feature control frame referencing "
-                            "the datum reference frame."
+                            "Add a position dimension locating this feature relative to "
+                            "an established datum (A, B, or C), or apply a GD&T position "
+                            "feature control frame referencing the datum reference frame."
                         ),
                         standard_reference="ASME Y14.5-2018 §4.1, §7.4",
                     )

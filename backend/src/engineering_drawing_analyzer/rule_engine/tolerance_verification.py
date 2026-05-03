@@ -137,11 +137,9 @@ class DimensionToleranceRule:
                         issue_type="MISSING_DIMENSION_TOLERANCE",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Dimension '{dim.id}' (value: {dim.value} {dim.unit}) "
-                            "has no explicit tolerance and the drawing does not "
-                            "define a general tolerance block.  Without a tolerance "
-                            "the acceptable variation for this dimension is undefined, "
-                            "making the drawing unmanufacturable."
+                            f"Dimension {dim.value} {dim.unit} has no explicit tolerance "
+                            "and the drawing does not define a general tolerance block. "
+                            "Without a tolerance the acceptable variation is undefined."
                         ),
                         location=dim.location,
                         corrective_action=(
@@ -203,19 +201,15 @@ class FCFCompletenessRule:
                         issue_type="MISSING_FCF_TOLERANCE_VALUE",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature control frame '{fcf.id}' "
-                            f"(GD&T symbol: {fcf.gdt_symbol}) has no valid "
-                            "tolerance value.  A feature control frame must "
-                            "specify a positive tolerance zone value so that "
-                            "the allowable geometric variation is defined."
+                            f"GD&T feature control frame ({fcf.gdt_symbol or 'unknown symbol'}) "
+                            "has no valid tolerance value. A feature control frame must "
+                            "specify a positive tolerance zone value."
                         ),
                         location=fcf.location,
                         corrective_action=(
-                            f"Add a positive tolerance value to feature control "
-                            f"frame '{fcf.id}'.  The tolerance value specifies the "
-                            "diameter or width of the tolerance zone (e.g. Ø0.05 mm "
-                            "for a position tolerance).  Refer to ASME Y14.5-2018 "
-                            "§10.1 for the correct feature control frame format."
+                            "Add a positive tolerance value to this feature control frame "
+                            "(e.g. Ø0.05 mm for a position tolerance). "
+                            "Refer to ASME Y14.5-2018 §10.1."
                         ),
                         standard_reference="ASME Y14.5-2018 §10.1",
                     )
@@ -235,21 +229,14 @@ class FCFCompletenessRule:
                         issue_type="MISSING_FCF_DATUM_REFERENCE",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature control frame '{fcf.id}' "
-                            f"(GD&T symbol: {fcf.gdt_symbol}) requires at least "
-                            "one datum reference per ASME Y14.5-2018 but none are "
-                            "specified.  Orientation, location, and runout tolerances "
-                            "must reference the Datum Reference Frame to be "
-                            "meaningful."
+                            f"GD&T feature control frame ({fcf.gdt_symbol}) requires at least "
+                            "one datum reference but none are specified. Orientation, "
+                            "location, and runout tolerances must reference the Datum Reference Frame."
                         ),
                         location=fcf.location,
                         corrective_action=(
-                            f"Add at least one datum reference to feature control "
-                            f"frame '{fcf.id}'.  For example, reference the primary "
-                            "datum (e.g. 'A') that establishes the orientation or "
-                            "location reference for this tolerance.  Datum references "
-                            "must be defined on the drawing per ASME Y14.5-2018 "
-                            "§10.3 and §4.1."
+                            "Add at least one datum reference (e.g. 'A') to this feature "
+                            "control frame. Refer to ASME Y14.5-2018 §10.3 and §4.1."
                         ),
                         standard_reference="ASME Y14.5-2018 §10.1, §10.3",
                     )

@@ -184,9 +184,8 @@ class FeatureOrientationRule:
                         issue_type="UNCONSTRAINED_FEATURE_ORIENTATION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"Feature '{feature.id}' ({feature.feature_type}) at "
-                            f"{location.view_name} has no dimensions or GD&T "
-                            "feature control frames. Its orientation is undefined."
+                            f"A {feature.feature_type.lower()} feature has no dimensions "
+                            "or GD&T feature control frames. Its orientation is undefined."
                         ),
                         location=location,
                         corrective_action=(
