@@ -37,6 +37,7 @@ from engineering_drawing_analyzer.exceptions import (  # noqa: E402
     UnsupportedReportFormatError,
 )
 from engineering_drawing_analyzer.models import ReportFormat  # noqa: E402
+from engineering_drawing_analyzer.gemini_analyzer import analyze_with_gemini  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -79,14 +80,7 @@ def health() -> dict:
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)) -> JSONResponse:
-    """Analyze an engineering drawing and return a JSON verification report.
-
-    Accepts multipart/form-data with a single ``file`` field containing a
-    DXF, DWG, or PDF drawing.
-
-    Returns the JSON verification report produced by the analysis pipeline.
-    """
-    # Validate content type loosely (the ingestion layer does the real check).
+    """Analyze an engineering drawing and return a JSON verification report."""
     filename = file.filename or "upload"
     suffix = Path(filename).suffix.lower()
     if suffix not in {".dxf", ".dwg", ".pdf"}:
@@ -98,12 +92,46 @@ async def analyze(file: UploadFile = File(...)) -> JSONResponse:
             ),
         )
 
-    # Write the upload to a temp file so the pipeline can read it by path.
     try:
         contents = await file.read()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not read upload: {exc}") from exc
 
+    import json
+
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+
+    # --- Try Gemini Vision first (PDF only) ---
+    if suffix == ".pdf" and gemini_api_key:
+        gemini_result = analyze_with_gemini(contents, suffix, gemini_api_key)
+        if gemini_result and "issues" in gemini_result:
+            # Normalise issue_counts from Gemini result
+            issues = gemini_result.get("issues", [])
+            counts: dict[str, int] = {"Critical": 0, "Warning": 0, "Info": 0}
+            for issue in issues:
+                sev = issue.get("severity", "Info")
+                if sev in counts:
+                    counts[sev] += 1
+
+            # Build systemic patterns
+            from collections import Counter
+            type_counts = Counter(i.get("issue_type", "") for i in issues)
+            patterns = gemini_result.get("systemic_patterns", []) or [
+                f"Systemic pattern: '{t}' appears {c} times"
+                for t, c in type_counts.items() if c > 2
+            ]
+
+            report = {
+                "drawing_id": gemini_result.get("drawing_id", Path(filename).stem),
+                "analysis_timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                "overall_status": gemini_result.get("overall_status", "Fail" if issues else "Pass"),
+                "issue_counts": counts,
+                "issues": issues,
+                "systemic_patterns": patterns,
+            }
+            return JSONResponse(content=report)
+
+    # --- Fallback: heuristic pipeline (DXF/DWG or no Gemini key) ---
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(contents)
         tmp_path = tmp.name
@@ -124,13 +152,10 @@ async def analyze(file: UploadFile = File(...)) -> JSONResponse:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}") from exc
     finally:
-        # Always clean up the temp file.
         try:
             os.unlink(tmp_path)
         except OSError:
             pass
-
-    import json
 
     report_data = json.loads(report_bytes)
     return JSONResponse(content=report_data)
