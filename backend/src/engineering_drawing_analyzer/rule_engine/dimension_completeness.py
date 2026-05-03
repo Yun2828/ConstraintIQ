@@ -166,7 +166,7 @@ class SizeDimensionRule:
                         issue_type="MISSING_SIZE_DIMENSION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"{feature.feature_type} feature at "
+                            f"Feature '{feature.id}' ({feature.feature_type}) at "
                             f"{feature.location.view_name if feature.location else 'unknown location'} "
                             "has no size dimension. Every feature must have at least "
                             "one dimension specifying its size (length, diameter, radius, etc.)."

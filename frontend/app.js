@@ -524,32 +524,26 @@ function renderResults(report) {
   }
 
   issues.forEach((issue, idx) => {
+    const num = idx + 1;
     const card = document.createElement("div");
     card.className = `issue-card severity-${issue.severity}`;
     card.dataset.id = issue.id;
     card.innerHTML = `
       <div class="issue-card-header">
-        <span class="issue-title">${idx + 1}. ${issue.title}</span>
+        <div class="issue-number-badge severity-${issue.severity}">${num}</div>
+        <span class="issue-title">${issue.title}</span>
         <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
       </div>
       <p class="issue-desc">${issue.description}</p>
-      <div class="issue-meta">
-        <span class="issue-meta-item">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          ${issue.category}
-        </span>
-        <span class="issue-meta-item">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          ${issue.costImpact}
-        </span>
-        <span class="issue-meta-item">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Supplier RFI Risk: ${issue.rfiRisk}
-        </span>
-        ${issue.standardRef ? `<span class="issue-meta-item">📐 ${issue.standardRef}</span>` : ""}
-      </div>
       <div class="issue-fix">
         <strong>Suggested Fix:</strong> ${issue.fix}
+      </div>
+      <div class="issue-meta">
+        ${issue.standardRef ? `<span class="issue-meta-item">📐 ${issue.standardRef}</span>` : ""}
+        <span class="issue-meta-item">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          RFI Risk: ${issue.rfiRisk}
+        </span>
       </div>
     `;
     card.addEventListener("click", () => selectIssue(issue.id));
@@ -568,8 +562,12 @@ function selectIssue(id) {
   document.querySelectorAll(".overlay-marker").forEach((m) => {
     m.classList.toggle("active", parseInt(m.dataset.id) === id);
   });
+  // Scroll card into view
   const activeCard = document.querySelector(`.issue-card[data-id="${id}"]`);
   if (activeCard) activeCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // Scroll dot into view in the PDF canvas wrap
+  const activeDot = document.querySelector(`.overlay-marker[data-id="${id}"]`);
+  if (activeDot) activeDot.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ─── Error display ────────────────────────────────────────────────────────────
@@ -748,28 +746,25 @@ function renderOverlays(issues) {
   const pdfCanvas = document.getElementById("pdfCanvas");
   if (!pdfCanvas) return;
 
-  // overlayContainer is absolutely positioned over the wrap div
-  // We need to position dots relative to the canvas position within the wrap
   issues.forEach((issue, idx) => {
     const coords = issue._rawCoords;
     if (!coords || coords.x == null || coords.y == null) return;
 
-    // PDF coordinate system: origin at bottom-left, y increases upward
-    // Canvas coordinate system: origin at top-left, y increases downward
+    // PDF coords: origin bottom-left, y up → canvas: origin top-left, y down
     const canvasX = coords.x * _canvasScale + _canvasOffsetX;
     const canvasY = (_pdfPageHeight - coords.y) * _canvasScale + _canvasOffsetY;
 
-    // Only show if within canvas bounds
+    // Only show if within canvas bounds (with 20px margin)
     if (canvasX < 0 || canvasY < 0 ||
-        canvasX > pdfCanvas.width + _canvasOffsetX ||
-        canvasY > pdfCanvas.height + _canvasOffsetY) return;
+        canvasX > pdfCanvas.width + _canvasOffsetX + 20 ||
+        canvasY > pdfCanvas.height + _canvasOffsetY + 20) return;
 
     const dot = document.createElement("div");
     dot.className = "issue-overlay";
     dot.style.left = `${canvasX}px`;
     dot.style.top  = `${canvasY}px`;
-    dot.innerHTML  = `<div class="overlay-marker severity-${issue.severity}" data-id="${issue.id}">${idx + 1}</div>`;
     dot.style.pointerEvents = "all";
+    dot.innerHTML = `<div class="overlay-marker severity-${issue.severity}" data-id="${issue.id}" title="${issue.title}">${idx + 1}</div>`;
     dot.addEventListener("click", () => selectIssue(issue.id));
     overlayContainer.appendChild(dot);
   });

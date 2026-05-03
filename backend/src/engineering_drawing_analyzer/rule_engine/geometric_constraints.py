@@ -184,15 +184,15 @@ class FeatureOrientationRule:
                         issue_type="UNCONSTRAINED_FEATURE_ORIENTATION",
                         severity=Severity.CRITICAL,
                         description=(
-                            f"{feature.feature_type} feature at "
+                            f"Feature '{feature.id}' ({feature.feature_type}) at "
                             f"{location.view_name} has no dimensions or GD&T "
                             "feature control frames. Its orientation is undefined."
                         ),
                         location=location,
                         corrective_action=(
-                            "Add dimensions or GD&T feature control frames to "
-                            "fully constrain this feature's orientation relative "
-                            "to the Datum Reference Frame."
+                            f"Add dimensions or GD&T feature control frames to "
+                            f"feature '{feature.id}' to fully constrain its "
+                            "orientation relative to the Datum Reference Frame."
                         ),
                         standard_reference="ASME Y14.5-2018 §4.1, §6.1",
                     )

@@ -44,12 +44,13 @@ logger = logging.getLogger(__name__)
 # Regex patterns
 # ---------------------------------------------------------------------------
 
-# Dimension: optional Ø/R prefix, number, optional tolerance
+# Dimension: optional Ø/R prefix, number, optional tolerance.
+_NUMBER_PATTERN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
 _DIM_RE = re.compile(
     r"(?P<prefix>[ØøRr∅]\s*)?"
-    r"(?P<value>[-+]?\d+(?:\.\d+)?)"
-    r"(?:\s*[±]\s*(?P<tol_sym>[\d.]+))?"
-    r"(?:\s*[+](?P<tol_upper>[\d.]+)\s*/?\s*[-](?P<tol_lower>[\d.]+))?",
+    rf"(?P<value>{_NUMBER_PATTERN})"
+    rf"(?:\s*[±]\s*(?P<tol_sym>{_NUMBER_PATTERN}))?"
+    rf"(?:\s*[+](?P<tol_upper>{_NUMBER_PATTERN})\s*/?\s*[-](?P<tol_lower>{_NUMBER_PATTERN}))?",
     re.UNICODE,
 )
 
@@ -86,6 +87,21 @@ _GEN_TOL_RE = re.compile(
 
 # Unit detection
 _UNIT_RE = re.compile(r"\b(mm|in|inch|inches|ft|cm)\b", re.IGNORECASE)
+
+# Non-dimension title-block / administrative text patterns.
+_DATE_RE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
+_SCALE_RE = re.compile(r"^\s*(?:scale\s*:?\s*)?\d+\s*:\s*\d+\s*$", re.IGNORECASE)
+_SHEET_RE = re.compile(r"\bsheet\s+\d+\s+of\s+\d+\b", re.IGNORECASE)
+_DIM_EVIDENCE_RE = re.compile(
+    rf"(?:[ØøRr∅]|[±°]|{_NUMBER_PATTERN}\s*(?:X|x)\s*{_NUMBER_PATTERN}|"
+    rf"\d+\.\d+|\.\d+)",
+    re.UNICODE,
+)
+_TITLE_BLOCK_WORD_RE = re.compile(
+    r"\b(?:title|date|drawn\s*by|material|scale|sheet|rev|size|cal\s*poly|"
+    r"solidworks|educational|project|manufacturing\s+engineering)\b",
+    re.IGNORECASE,
+)
 
 # Title block keywords
 _TB_KEYWORDS: dict[str, list[str]] = {
@@ -142,6 +158,80 @@ def _nearest_feature(
     return best_id
 
 
+def _is_title_block_region(span: dict, page_h: float) -> bool:
+    """Return True for text in the lower title-block band of the sheet."""
+    bbox = span.get("bbox")
+    if bbox is None:
+        return False
+    pt = _center(bbox)
+    return bool(pt and pt.y >= page_h * 0.86)
+
+
+def _attach_dimensions_to_features(
+    features: list[Feature],
+    dimensions: list[Dimension],
+) -> list[Feature]:
+    """Keep only PDF vector candidates referenced by extracted dimensions."""
+    dims_by_feature: dict[str, list[Dimension]] = {}
+    for dim in dimensions:
+        for feature_id in dim.associated_feature_ids:
+            dims_by_feature.setdefault(feature_id, []).append(dim)
+
+    promoted: list[Feature] = []
+    for feature in features:
+        dims = dims_by_feature.get(feature.id, [])
+        if not dims:
+            continue
+        feature.dimensions = dims
+        promoted.append(feature)
+
+    kept_ids = {feature.id for feature in promoted}
+    for dim in dimensions:
+        dim.associated_feature_ids = [
+            feature_id
+            for feature_id in dim.associated_feature_ids
+            if feature_id in kept_ids
+        ]
+
+    return promoted
+
+
+def _filter_views_to_features(views: list[View], features: list[Feature]) -> list[View]:
+    kept_ids = {feature.id for feature in features}
+    if not kept_ids:
+        return []
+    return [
+        View(
+            name=view.name,
+            features=[
+                feature_id
+                for feature_id in view.features
+                if feature_id in kept_ids
+            ],
+        )
+        for view in views
+    ]
+
+
+def _extract_general_tolerance(spans: list[dict]) -> Optional[Tolerance]:
+    """Extract a drawing-level tolerance from the title-block tolerance text."""
+    joined = " ".join(span.get("text", "").strip() for span in spans if span.get("text"))
+    if not joined:
+        return None
+
+    match = _GEN_TOL_RE.search(joined)
+    if not match and re.search(r"\bTOLERANCES?\b", joined, re.IGNORECASE):
+        match = _TOL_RE.search(joined)
+    if not match:
+        return None
+
+    try:
+        value = float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+    return Tolerance(upper=value, lower=-value, is_general=True)
+
+
 # ---------------------------------------------------------------------------
 # Text classifiers
 # ---------------------------------------------------------------------------
@@ -159,11 +249,49 @@ def _is_dimension(text: str) -> bool:
     s = text.strip()
     if not any(ch.isdigit() for ch in s):
         return False
+    if _DATE_RE.search(s) or _SCALE_RE.match(s) or _SHEET_RE.search(s):
+        return False
+    if _TITLE_BLOCK_WORD_RE.search(s):
+        return False
+
+    # Engineering notes can contain numbers, but they should not become
+    # feature dimensions unless they carry explicit dimensional evidence.
+    if not _DIM_EVIDENCE_RE.search(s):
+        return False
+
+    letters = re.findall(r"[A-Za-z]+", s)
+    if letters:
+        allowed_tokens = {
+            "x", "X", "R", "r", "UNC", "UNF", "UNEF", "NPT", "THRU", "THROUGH",
+        }
+        if not all(token in allowed_tokens for token in letters):
+            return False
+
     return bool(_DIM_RE.search(s))
+
+
+def _unit_for_dimension_text(text: str, default_unit: str) -> str:
+    """Infer a dimension type/unit token from annotation text."""
+    stripped = text.strip()
+    if "°" in stripped:
+        return "ANGULAR"
+    if re.match(r"^[Øø∅]", stripped):
+        return "DIAMETER"
+    if re.match(r"^[Rr]", stripped):
+        return "RADIAL"
+    return default_unit
 
 
 def _parse_dim(text: str, unit: str) -> Optional[tuple[float, Optional[Tolerance]]]:
     s = re.sub(r"^[ØøRr∅]\s*", "", text.strip())
+    if "°" in s:
+        angle_match = re.search(rf"(?P<value>{_NUMBER_PATTERN})\s*°", s)
+        if angle_match:
+            try:
+                return float(angle_match.group("value")), None
+            except (TypeError, ValueError):
+                return None
+
     m = _DIM_RE.search(s)
     if not m:
         return None
@@ -462,7 +590,7 @@ class PDFParser:
         datums: list[Datum] = []
         views: list[View] = []
         notes: list[str] = []
-        general_tolerance: Optional[Tolerance] = None
+        general_tolerance: Optional[Tolerance] = _extract_general_tolerance(all_spans)
         used: set[int] = set()
 
         dim_spans, fcf_spans, other_spans = [], [], []
@@ -479,8 +607,11 @@ class PDFParser:
 
         # Dimensions
         for idx, span in dim_spans:
+            if _is_title_block_region(span, ph):
+                continue
             text = span.get("text", "").strip()
-            parsed = _parse_dim(text, unit)
+            dim_unit = _unit_for_dimension_text(text, unit)
+            parsed = _parse_dim(text, dim_unit)
             if parsed is None:
                 continue
             value, tol = parsed
@@ -490,7 +621,7 @@ class PDFParser:
             dim = Dimension(
                 id=_uid(),
                 value=value,
-                unit=unit,
+                unit=dim_unit,
                 tolerance=tol,
                 location=_loc(pt, view_name, text),
                 associated_feature_ids=[nearest] if nearest else [],
@@ -565,9 +696,15 @@ class PDFParser:
         logger.debug("Page %d: %d datums, %d views, %d notes",
                      page_num, len(datums), len(views), len(notes))
 
-        # Default view if none found
+        features = _attach_dimensions_to_features(features, dimensions)
+        feature_ids = {feature.id for feature in features}
+        for datum in datums:
+            if datum.feature_id not in feature_ids:
+                datum.feature_id = ""
+
+        views = _filter_views_to_features(views, features)
         if not views and features:
-            views.append(View(name=view_name, features=feat_ids))
+            views.append(View(name=view_name, features=[feature.id for feature in features]))
 
         title_block = _extract_title_block(all_spans)
 
