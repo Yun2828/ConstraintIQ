@@ -428,6 +428,7 @@ function renderResults(report) {
       title: formatIssueTitle(issue.issue_type),
       severity: mapSeverity(issue.severity),
       _rawSeverity: issue.severity,
+      _issueType: issue.issue_type,
       category: formatIssueTitle(issue.issue_type),
       description: issue.description || "",
       fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
@@ -758,8 +759,30 @@ function renderOverlays(issues) {
   const pdfCanvas = document.getElementById("pdfCanvas");
   if (!pdfCanvas || pdfCanvas.width === 0) return;
 
+  // Title-block-level issues — no dot on drawing
+  const TITLE_BLOCK_TYPES = new Set([
+    "MISSING_TITLE_BLOCK_PART_NUMBER",
+    "MISSING_TITLE_BLOCK_REVISION",
+    "MISSING_TITLE_BLOCK_MATERIAL",
+    "MISSING_TITLE_BLOCK_SCALE",
+    "MISSING_TITLE_BLOCK_UNITS",
+    "MISSING_DATUM_REFERENCE_FRAME",
+    "INCOMPLETE_DATUM_REFERENCE_FRAME",
+    "DATUM_SYMBOL_NO_FEATURE",
+    "DATUM_SYMBOL_ON_NON_PHYSICAL_FEATURE",
+    "NO_ORTHOGRAPHIC_VIEWS",
+    "INSUFFICIENT_DATA_EXTRACTED",
+    "NOTE_UNIT_SYSTEM_CONTRADICTION",
+  ]);
+
+  // Drawing body = top 80% of page (title block occupies bottom ~20%)
+  const drawingBodyMaxY = pdfCanvas.height * 0.82;
+
   let dotCount = 0;
   issues.forEach((issue, idx) => {
+    // Skip title-block-level issues — they have no meaningful drawing location
+    if (TITLE_BLOCK_TYPES.has(issue._issueType)) return;
+
     const coords = issue._rawCoords;
     if (!coords || coords.x == null || coords.y == null) return;
 
@@ -767,10 +790,13 @@ function renderOverlays(issues) {
     const canvasX = coords.x * _canvasScale + _canvasOffsetX;
     const canvasY = (_pdfPageHeight - coords.y) * _canvasScale + _canvasOffsetY;
 
-    // Only show if within canvas bounds (with 20px margin)
-    if (canvasX < -20 || canvasY < -20 ||
-        canvasX > pdfCanvas.width + _canvasOffsetX + 20 ||
-        canvasY > pdfCanvas.height + _canvasOffsetY + 20) return;
+    // Skip dots in the title block area (bottom of page)
+    if (canvasY > drawingBodyMaxY) return;
+
+    // Skip dots outside canvas bounds
+    if (canvasX < 0 || canvasY < 0 ||
+        canvasX > pdfCanvas.width + _canvasOffsetX ||
+        canvasY > pdfCanvas.height + _canvasOffsetY) return;
 
     const dot = document.createElement("div");
     dot.className = "issue-overlay";
