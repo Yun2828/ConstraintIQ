@@ -544,10 +544,18 @@ class PDFParser:
         unit = self._detect_unit(all_spans)
 
         # ---- Build features from paths -----------------------------------
+        # Only convert paths that look like meaningful geometry (holes, slots,
+        # outlines).  Dimension lines, border lines, hatching, and title-block
+        # rules are filtered out to avoid thousands of spurious issues.
         features: list[Feature] = []
         path_centers: list[Optional[Point2D]] = []
 
+        page_rect = page.rect
+        page_w, page_h = page_rect.width, page_rect.height
+
         for path in drawings:
+            if not self._is_meaningful_geometry(path, page_w, page_h):
+                continue
             feature, center = self._path_to_feature(path, view_name)
             features.append(feature)
             path_centers.append(center)
@@ -640,6 +648,78 @@ class PDFParser:
             Feature(id=_new_id(), feature_type=feature_type, location=location),
             center,
         )
+
+    def _is_meaningful_geometry(
+        self, path: dict, page_w: float, page_h: float
+    ) -> bool:
+        """Return True only for paths that represent real part geometry.
+
+        Filters out:
+        - Thin/short lines (dimension lines, leader lines, hatching)
+        - Full-page-width or full-page-height lines (border lines)
+        - Very small paths (arrowheads, tick marks)
+        - Paths with no bounding rect
+        """
+        rect = path.get("rect")
+        if rect is None:
+            return False
+
+        try:
+            r = fitz.Rect(rect)
+        except Exception:  # noqa: BLE001
+            return False
+
+        width = r.width
+        height = r.height
+
+        # Skip degenerate / invisible paths
+        if width < 1.0 and height < 1.0:
+            return False
+
+        # Skip very small paths (arrowheads, tick marks, dots) — under 4pt in both dims
+        if width < 4.0 and height < 4.0:
+            return False
+
+        # Skip lines that span nearly the full page width or height (borders, title block rules)
+        if width > page_w * 0.85 or height > page_h * 0.85:
+            return False
+
+        # Skip thin horizontal/vertical lines (dimension lines, extension lines, hatching)
+        # A "thin" line is one where one dimension is < 3pt
+        is_thin_horizontal = height < 3.0
+        is_thin_vertical = width < 3.0
+        if is_thin_horizontal or is_thin_vertical:
+            return False
+
+        # Keep rectangles, curves, and closed shapes — these are real geometry
+        path_type = path.get("type", "")
+        if path_type == "re":
+            return True
+
+        items = path.get("items", [])
+        if not items:
+            return False
+
+        item_types = {
+            item[0]
+            for item in items
+            if isinstance(item, (list, tuple)) and item
+        }
+
+        # Curves and arcs are almost always real geometry (holes, fillets, etc.)
+        if "c" in item_types or "qu" in item_types:
+            return True
+
+        # Closed polylines (filled shapes) are real geometry
+        if path.get("fill") is not None:
+            return True
+
+        # Open polylines with enough area are likely real geometry
+        area = width * height
+        if area > 200:  # ~14pt × 14pt minimum bounding box
+            return True
+
+        return False
 
     def _classify_path(self, path_type: str, items: list) -> str:
         """Classify a PDF path into a semantic feature type.
