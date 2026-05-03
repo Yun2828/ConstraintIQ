@@ -480,6 +480,16 @@ function renderResults(report) {
 
   issueCountBadge.textContent = `${locatedIssues.length} issue${locatedIssues.length !== 1 ? "s" : ""}`;
 
+  // Summary chips — based on located issues only
+  const locHigh = locatedIssues.filter(i => i.severity === "high").length;
+  const locMed  = locatedIssues.filter(i => i.severity === "medium").length;
+  const locLow  = locatedIssues.filter(i => i.severity === "low").length;
+  summaryChips.innerHTML = `
+    ${locHigh ? `<span class="chip chip-high">● ${locHigh} Critical</span>` : ""}
+    ${locMed  ? `<span class="chip chip-medium">● ${locMed} Warning</span>` : ""}
+    ${locLow  ? `<span class="chip chip-low">● ${locLow} Info</span>` : ""}
+  `;
+
   // Release status
   releaseStatus.style.display = "block";
   if (score === 100 || (report.overall_status === "Pass")) {
@@ -497,12 +507,7 @@ function renderResults(report) {
   }
   renderDashSidebar();
 
-  // Summary chips
-  summaryChips.innerHTML = `
-    ${highCount ? `<span class="chip chip-high">● ${highCount} Critical</span>` : ""}
-    ${medCount  ? `<span class="chip chip-medium">● ${medCount} Warning</span>` : ""}
-    ${lowCount  ? `<span class="chip chip-low">● ${lowCount} Info</span>` : ""}
-  `;
+  // Summary chips handled above with locatedIssues counts
 
   // Systemic patterns banner
   if (report.systemic_patterns && report.systemic_patterns.length) {
@@ -517,10 +522,10 @@ function renderResults(report) {
   _lastIssues = locatedIssues;
   renderOverlays(locatedIssues);
 
-  // Issue cards
+  // Issue cards — only show located issues (those with dots on PDF)
   panelIssues.innerHTML = "";
 
-  if (!locatedIssues.length && !generalIssues.length) {
+  if (!locatedIssues.length) {
     panelIssues.innerHTML = `
       <div class="issues-placeholder">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">
@@ -531,23 +536,18 @@ function renderResults(report) {
     return;
   }
 
-  function makeCard(issue) {
+  locatedIssues.forEach(issue => {
     const card = document.createElement("div");
     card.className = `issue-card severity-${issue.severity}`;
-    if (issue.id !== null) card.dataset.id = issue.id;
+    card.dataset.id = issue.id;
     const costLabel = costImpactFromSeverity(issue._rawSeverity);
     const rfiLabel  = rfiRiskFromSeverity(issue._rawSeverity);
-    const numBadge  = issue.id !== null
-      ? `<div class="issue-number-badge severity-${issue.severity}">${issue.id}</div>`
-      : `<div class="issue-number-badge severity-low">—</div>`;
     card.innerHTML = `
       <div class="issue-card-header">
-        ${numBadge}
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span class="issue-title">${issue.title}</span>
-            <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
-          </div>
+        <div class="issue-number-badge severity-${issue.severity}">${issue.id}</div>
+        <div style="flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="issue-title">${issue.title}</span>
+          <span class="issue-severity-tag tag-${issue.severity}">${severityLabel(issue.severity)}</span>
         </div>
       </div>
       <p class="issue-desc">${issue.description}</p>
@@ -565,21 +565,9 @@ function renderResults(report) {
         <strong>Suggested Fix:</strong> ${issue.fix}
       </div>
     `;
-    if (issue.id !== null) card.addEventListener("click", () => selectIssue(issue.id));
-    return card;
-  }
-
-  // Numbered located issues first
-  locatedIssues.forEach(issue => panelIssues.appendChild(makeCard(issue)));
-
-  // General issues (no dot) in a separate section
-  if (generalIssues.length) {
-    const divider = document.createElement("div");
-    divider.className = "general-issues-divider";
-    divider.textContent = "Drawing-level issues";
-    panelIssues.appendChild(divider);
-    generalIssues.forEach(issue => panelIssues.appendChild(makeCard(issue)));
-  }
+    card.addEventListener("click", () => selectIssue(issue.id));
+    panelIssues.appendChild(card);
+  });
 
   if (locatedIssues.length) setTimeout(() => selectIssue(locatedIssues[0].id), 200);
 }
