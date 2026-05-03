@@ -594,6 +594,12 @@ function renderPanel(issues) {
     scoreArc.style.strokeDashoffset = "0";
     scoreArc.style.stroke = "#22c55e";
     scoreLabel.textContent = "Ready for Release";
+    // Update release badge to green
+    releaseStatus.style.display = "block";
+    releaseStatusBadge.className = "release-status-badge ready";
+    releaseStatusBadge.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> READY FOR RELEASE`;
+    setProjectStatus(activeProjectFilename, "ready");
+    renderDashSidebar();
     panelIssues.innerHTML = `
       <div class="issues-placeholder">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">

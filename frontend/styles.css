@@ -642,13 +642,15 @@ body {
   border-radius: var(--radius);
   padding: 14px 16px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, outline-color 0.15s;
   border-left: 3px solid transparent;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  outline: 1px solid transparent;
 }
 .issue-card:hover { background: #152236; }
+.issue-card.active { background: #152236; outline-color: rgba(59,130,246,0.35); }
 .issue-card.severity-high   { border-left-color: var(--danger); }
 .issue-card.severity-medium { border-left-color: var(--warn); }
 .issue-card.severity-low    { border-left-color: #475569; }
@@ -708,9 +710,7 @@ body {
   font-size: 13px;
   color: #93c5fd;
   line-height: 1.65;
-  display: none;
 }
-.issue-card.active .issue-fix-box { display: block; }
 .issue-fix-box strong { color: #bfdbfe; }
 
 .general-issues-divider {
