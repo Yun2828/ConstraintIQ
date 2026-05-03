@@ -63,6 +63,7 @@ function showLanding() {
   dashboardPage.style.display = "none";
   backBtn.style.display = "none";
   navDashBtn.classList.remove("nav-active");
+  navDashBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Dashboard`;
   renderLandingProjects();
 }
 
@@ -72,13 +73,18 @@ function showDashboard() {
   dashboardPage.style.display = "block";
   backBtn.style.display = "none";
   navDashBtn.classList.add("nav-active");
+  navDashBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg> Landing`;
   renderDashSidebar();
 }
 
 // ─── Navigation wiring ────────────────────────────────────────────────────────
 navBrand.addEventListener("click", (e) => { e.preventDefault(); showLanding(); });
 backBtn.addEventListener("click", () => showLanding());
-navDashBtn.addEventListener("click", () => showDashboard());
+// Dashboard button toggles between landing and dashboard
+navDashBtn.addEventListener("click", () => {
+  if (activePage === "dashboard") showLanding();
+  else showDashboard();
+});
 gotoDashboardBtn.addEventListener("click", () => showDashboard());
 viewAllBtn.addEventListener("click", () => showDashboard());
 
@@ -308,6 +314,8 @@ async function runAnalysis() {
     return;
   }
 
+  // Hide analyze button while analyzing
+  analyzeBtn.style.display = "none";
   loadingOverlay.style.display = "flex";
 
   const steps = [
@@ -360,6 +368,7 @@ async function runAnalysis() {
 
     setTimeout(() => {
       loadingOverlay.style.display = "none";
+      analyzeBtn.style.display = "";  // restore button
       analysisRun = true;
       renderResults(report);
     }, 300);
@@ -367,6 +376,7 @@ async function runAnalysis() {
   } catch (err) {
     clearInterval(stepInterval);
     loadingOverlay.style.display = "none";
+    analyzeBtn.style.display = "";  // restore button on error too
     showError(`Analysis failed: ${err.message}`);
   }
 }
