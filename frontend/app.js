@@ -422,19 +422,18 @@ function renderResults(report) {
   }
 
   const issues = (report.issues || [])
-    .filter(issue => issue.issue_type !== "ML_UNAVAILABLE")  // hide internal ML noise
+    .filter(issue => issue.issue_type !== "ML_UNAVAILABLE")
     .map((issue, idx) => ({
-    id: idx + 1,
-    title: formatIssueTitle(issue.issue_type),
-    severity: mapSeverity(issue.severity),
-    category: issue.rule_id || issue.issue_type,
-    location: { x: "0%", y: "0%" }, // position handled by renderOverlays
-    description: issue.description || "",
-    fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
-    costImpact: costImpactFromSeverity(issue.severity),
-    rfiRisk: rfiRiskFromSeverity(issue.severity),
-    standardRef: issue.standard_reference || "",
-  }));
+      id: idx + 1,
+      title: formatIssueTitle(issue.issue_type),
+      severity: mapSeverity(issue.severity),
+      fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
+      standardRef: issue.standard_reference || "",
+      // Attach raw PDF coordinates for overlay dot placement
+      _rawCoords: issue.location && issue.location.coordinates
+        ? { x: issue.location.coordinates.x, y: issue.location.coordinates.y }
+        : null,
+    }));
 
   const highCount   = issues.filter((i) => i.severity === "high").length;
   const medCount    = issues.filter((i) => i.severity === "medium").length;
@@ -505,7 +504,6 @@ function renderResults(report) {
 
   // Overlays on drawing — only show dots for issues with real coordinates
   overlayContainer.innerHTML = "";
-  // Cache issues on lastReport for re-render after PDF loads
   if (lastReport) lastReport._cachedIssues = issues;
   renderOverlays(issues);
 
@@ -737,8 +735,9 @@ function loadFileIntoViewer(file) {
 function renderOverlays(issues) {
   overlayContainer.innerHTML = "";
   const pdfCanvas = document.getElementById("pdfCanvas");
-  if (!pdfCanvas) return;
+  if (!pdfCanvas || pdfCanvas.width === 0) return;
 
+  let dotCount = 0;
   issues.forEach((issue, idx) => {
     const coords = issue._rawCoords;
     if (!coords || coords.x == null || coords.y == null) return;
@@ -748,7 +747,7 @@ function renderOverlays(issues) {
     const canvasY = (_pdfPageHeight - coords.y) * _canvasScale + _canvasOffsetY;
 
     // Only show if within canvas bounds (with 20px margin)
-    if (canvasX < 0 || canvasY < 0 ||
+    if (canvasX < -20 || canvasY < -20 ||
         canvasX > pdfCanvas.width + _canvasOffsetX + 20 ||
         canvasY > pdfCanvas.height + _canvasOffsetY + 20) return;
 
@@ -760,7 +759,9 @@ function renderOverlays(issues) {
     dot.innerHTML = `<div class="overlay-marker severity-${issue.severity}" data-id="${issue.id}" title="${issue.title}">${idx + 1}</div>`;
     dot.addEventListener("click", () => selectIssue(issue.id));
     overlayContainer.appendChild(dot);
+    dotCount++;
   });
+  console.log(`renderOverlays: ${dotCount} dots placed out of ${issues.length} issues`);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
