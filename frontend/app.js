@@ -440,23 +440,47 @@ function renderResults(report) {
   const medCount    = issues.filter((i) => i.severity === "medium").length;
   const lowCount    = issues.filter((i) => i.severity === "low").length;
 
-  const score = Math.max(0, 100 - highCount * 18 - medCount * 8 - lowCount * 3);
+  // Score: start at 100, deduct based on severity
+  // Critical issues are weighted heavily, warnings moderately, info lightly
+  // Score never goes below 0, and 100 only when zero issues
+  let score = 100;
+  if (issues.length > 0) {
+    // Each critical costs up to 15 pts (capped so a few criticals don't zero it out)
+    const criticalPenalty = Math.min(highCount * 12, 65);
+    const warningPenalty  = Math.min(medCount  *  5, 20);
+    const infoPenalty     = Math.min(lowCount  *  2,  5);
+    score = Math.max(0, Math.round(100 - criticalPenalty - warningPenalty - infoPenalty));
+  }
+
   const circumference = 150.8;
   const offset = circumference - (score / 100) * circumference;
 
-  scoreValue.textContent = score;
+  scoreValue.textContent = score + "%";
   scoreArc.style.strokeDashoffset = offset;
-  scoreArc.style.stroke = score >= 70 ? "#22c55e" : score >= 45 ? "#f59e0b" : "#ef4444";
-  scoreLabel.textContent = score >= 70 ? "Acceptable" : score >= 45 ? "Needs Review" : "Critical Issues";
+
+  if (score === 100) {
+    scoreArc.style.stroke = "#22c55e";
+    scoreLabel.textContent = "Ready for Release";
+  } else if (score >= 70) {
+    scoreArc.style.stroke = "#f59e0b";
+    scoreLabel.textContent = "Needs Review";
+  } else {
+    scoreArc.style.stroke = "#ef4444";
+    scoreLabel.textContent = "Critical Issues";
+  }
 
   issueCountBadge.textContent = `${issues.length} issue${issues.length !== 1 ? "s" : ""}`;
 
   // Release status
   releaseStatus.style.display = "block";
-  if (report.overall_status === "Pass" || (score >= 70 && highCount === 0)) {
+  if (score === 100 || (report.overall_status === "Pass")) {
     releaseStatusBadge.className = "release-status-badge ready";
     releaseStatusBadge.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> READY FOR RELEASE`;
     setProjectStatus(activeProjectFilename, "ready");
+  } else if (score >= 70) {
+    releaseStatusBadge.className = "release-status-badge not-ready";
+    releaseStatusBadge.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> NEEDS REVIEW`;
+    setProjectStatus(activeProjectFilename, "review");
   } else {
     releaseStatusBadge.className = "release-status-badge not-ready";
     releaseStatusBadge.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> NOT READY FOR RELEASE`;

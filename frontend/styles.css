@@ -561,6 +561,9 @@ body {
   flex-shrink: 0;
 }
 .score-ring svg { width: 60px; height: 60px; }
+.score-ring svg circle:last-child {
+  transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;
+}
 .score-value {
   position: absolute;
   inset: 0;
