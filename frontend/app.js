@@ -402,7 +402,7 @@ function clearResults() {
 }
 
 function renderResults(report) {
-  // Title-block / drawing-level issue types — no dot, shown separately
+  // Title-block / drawing-level issue types — no dot on PDF
   const DRAWING_LEVEL_TYPES = new Set([
     "MISSING_TITLE_BLOCK_PART_NUMBER", "MISSING_TITLE_BLOCK_REVISION",
     "MISSING_TITLE_BLOCK_MATERIAL", "MISSING_TITLE_BLOCK_SCALE",
@@ -412,77 +412,49 @@ function renderResults(report) {
     "INSUFFICIENT_DATA_EXTRACTED", "NOTE_UNIT_SYSTEM_CONTRADICTION",
   ]);
 
-  // Map all issues
-  const allIssues = (report.issues || [])
+  // Map and filter to only located issues (have coords, not drawing-level)
+  const locatedIssues = (report.issues || [])
     .filter(i => i.issue_type !== "ML_UNAVAILABLE")
-    .map(issue => ({
-      title:       formatIssueTitle(issue.issue_type),
-      severity:    mapSeverity(issue.severity),
+    .filter(i => !DRAWING_LEVEL_TYPES.has(i.issue_type))
+    .filter(i => i.location && i.location.coordinates &&
+                 i.location.coordinates.x != null && i.location.coordinates.y != null)
+    .map((issue, idx) => ({
+      id:           idx + 1,
+      title:        formatIssueTitle(issue.issue_type),
+      severity:     mapSeverity(issue.severity),
       _rawSeverity: issue.severity,
-      _issueType:  issue.issue_type,
-      description: issue.description || "",
-      fix:         issue.corrective_action || "Refer to ANSI/ASME Y14.5.",
-      standardRef: issue.standard_reference || "",
-      _rawCoords:  issue.location && issue.location.coordinates
-                     ? { x: issue.location.coordinates.x, y: issue.location.coordinates.y }
-                     : null,
-      _isDrawingLevel: DRAWING_LEVEL_TYPES.has(issue.issue_type),
+      _issueType:   issue.issue_type,
+      description:  issue.description || "",
+      fix:          issue.corrective_action || "Refer to ANSI/ASME Y14.5.",
+      _rawCoords:   { x: issue.location.coordinates.x, y: issue.location.coordinates.y },
     }));
 
-  // Split: located issues get dots + sequential numbers
-  // Drawing-level issues shown below without numbers
-  const locatedIssues = allIssues.filter(i => !i._isDrawingLevel && i._rawCoords);
-  const generalIssues = allIssues.filter(i => i._isDrawingLevel || !i._rawCoords);
+  // Store globally so PDF canvas re-render can re-place dots
+  _lastIssues = locatedIssues;
 
-  // Assign sequential IDs only to located issues
-  locatedIssues.forEach((issue, idx) => { issue.id = idx + 1; });
-  // General issues get no dot number
-  generalIssues.forEach((issue, idx) => { issue.id = null; });
+  // Score based on all non-ML issues
+  const allIssues = (report.issues || []).filter(i => i.issue_type !== "ML_UNAVAILABLE");
+  const allHigh = allIssues.filter(i => mapSeverity(i.severity) === "high").length;
+  const allMed  = allIssues.filter(i => mapSeverity(i.severity) === "medium").length;
+  const allLow  = allIssues.filter(i => mapSeverity(i.severity) === "low").length;
 
-  const issues = locatedIssues; // dots on PDF
-
-  // Score uses ALL issues for accuracy
-  const allHigh = allIssues.filter(i => i.severity === "high").length;
-  const allMed  = allIssues.filter(i => i.severity === "medium").length;
-  const allLow  = allIssues.filter(i => i.severity === "low").length;
-  const highCount = allHigh;
-  const medCount  = allMed;
-  const lowCount  = allLow;
-
-  // Score: start at 100, deduct based on severity
-  // Critical issues are weighted heavily, warnings moderately, info lightly
-  // Score never goes below 0, and 100 only when zero issues
   let score = 100;
-  if (issues.length > 0) {
-    // Each critical costs up to 15 pts (capped so a few criticals don't zero it out)
-    const criticalPenalty = Math.min(highCount * 12, 65);
-    const warningPenalty  = Math.min(medCount  *  5, 20);
-    const infoPenalty     = Math.min(lowCount  *  2,  5);
-    score = Math.max(0, Math.round(100 - criticalPenalty - warningPenalty - infoPenalty));
+  if (allIssues.length > 0) {
+    score = Math.max(0, Math.round(100
+      - Math.min(allHigh * 12, 65)
+      - Math.min(allMed  *  5, 20)
+      - Math.min(allLow  *  2,  5)));
   }
 
   const circumference = 150.8;
-  const offset = circumference - (score / 100) * circumference;
-
   scoreValue.textContent = score + "%";
-  scoreArc.style.strokeDashoffset = offset;
-
-  if (score === 100) {
-    scoreArc.style.stroke = "#22c55e";
-    scoreLabel.textContent = "Ready for Release";
-  } else if (score >= 70) {
-    scoreArc.style.stroke = "#f59e0b";
-    scoreLabel.textContent = "Needs Review";
-  } else {
-    scoreArc.style.stroke = "#ef4444";
-    scoreLabel.textContent = "Critical Issues";
-  }
-
-  // Summary chips handled by renderOverlays section below
+  scoreArc.style.strokeDashoffset = circumference - (score / 100) * circumference;
+  scoreArc.style.stroke = score === 100 ? "#22c55e" : score >= 70 ? "#f59e0b" : "#ef4444";
+  scoreLabel.textContent = score === 100 ? "Ready for Release" : score >= 70 ? "Needs Review" : "Critical Issues";
 
   // Release status
   releaseStatus.style.display = "block";
-  if (score === 100 || (report.overall_status === "Pass")) {
+  if (score === 100) {
     releaseStatusBadge.className = "release-status-badge ready";
     releaseStatusBadge.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> READY FOR RELEASE`;
     setProjectStatus(activeProjectFilename, "ready");
@@ -493,46 +465,34 @@ function renderResults(report) {
   } else {
     releaseStatusBadge.className = "release-status-badge not-ready";
     releaseStatusBadge.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> NOT READY FOR RELEASE`;
-    setProjectStatus(activeProjectFilename, highCount > 0 ? "blocked" : "review");
+    setProjectStatus(activeProjectFilename, allHigh > 0 ? "blocked" : "review");
   }
   renderDashSidebar();
 
-  // Summary chips handled above with locatedIssues counts
-
-  // Systemic patterns banner
-  if (report.systemic_patterns && report.systemic_patterns.length) {
-    const banner = document.createElement("div");
-    banner.className = "systemic-banner";
-    banner.innerHTML = `<strong>Systemic patterns detected:</strong> ${report.systemic_patterns.join(" · ")}`;
-    panelIssues.parentElement.insertBefore(banner, panelIssues);
-  }
-
-  // Render overlays first — this assigns sequential IDs 1,2,3...
-  overlayContainer.innerHTML = "";
-  _lastIssues = locatedIssues;
-  const dotCount = renderOverlays(locatedIssues);
-
-  // Panel shows ONLY the issues that got a dot (renderOverlays updated their .id)
-  // Filter to just those with a valid sequential id
-  const panelIssues_list = locatedIssues.filter(i => i.id != null && i.id > 0);
-
-  // Update badge to match dot count
-  issueCountBadge.textContent = `${panelIssues_list.length} issue${panelIssues_list.length !== 1 ? "s" : ""}`;
-
-  // Summary chips
-  const locHigh = panelIssues_list.filter(i => i.severity === "high").length;
-  const locMed  = panelIssues_list.filter(i => i.severity === "medium").length;
-  const locLow  = panelIssues_list.filter(i => i.severity === "low").length;
+  // Badge and chips based on located issues
+  const n = locatedIssues.length;
+  issueCountBadge.textContent = `${n} issue${n !== 1 ? "s" : ""}`;
+  const lH = locatedIssues.filter(i => i.severity === "high").length;
+  const lM = locatedIssues.filter(i => i.severity === "medium").length;
+  const lL = locatedIssues.filter(i => i.severity === "low").length;
   summaryChips.innerHTML = `
-    ${locHigh ? `<span class="chip chip-high">● ${locHigh} Critical</span>` : ""}
-    ${locMed  ? `<span class="chip chip-medium">● ${locMed} Warning</span>` : ""}
-    ${locLow  ? `<span class="chip chip-low">● ${locLow} Info</span>` : ""}
+    ${lH ? `<span class="chip chip-high">● ${lH} Critical</span>` : ""}
+    ${lM ? `<span class="chip chip-medium">● ${lM} Warning</span>` : ""}
+    ${lL ? `<span class="chip chip-low">● ${lL} Info</span>` : ""}
   `;
 
-  // Issue cards
+  // Render panel cards immediately (same list as dots)
+  renderPanel(locatedIssues);
+
+  // Render overlays (may be deferred if canvas not ready yet)
+  renderOverlays(locatedIssues);
+}
+
+// ─── Render right panel cards ─────────────────────────────────────
+function renderPanel(issues) {
   panelIssues.innerHTML = "";
 
-  if (!panelIssues_list.length) {
+  if (!issues.length) {
     panelIssues.innerHTML = `
       <div class="issues-placeholder">
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.5">
@@ -543,7 +503,7 @@ function renderResults(report) {
     return;
   }
 
-  panelIssues_list.forEach(issue => {
+  issues.forEach(issue => {
     const card = document.createElement("div");
     card.className = `issue-card severity-${issue.severity}`;
     card.dataset.id = issue.id;
@@ -576,7 +536,7 @@ function renderResults(report) {
     panelIssues.appendChild(card);
   });
 
-  if (panelIssues_list.length) setTimeout(() => selectIssue(panelIssues_list[0].id), 200);
+  if (issues.length) setTimeout(() => selectIssue(issues[0].id), 200);
 }
 
 // ─── Select issue ─────────────────────────────────────────────────────────────
@@ -756,6 +716,8 @@ function loadFileIntoViewer(file) {
 
         // Re-render overlays now that canvas dimensions are known
         renderOverlays(_lastIssues);
+        // Rebuild panel so numbers match dots exactly
+        if (_lastIssues.length) renderPanel(_lastIssues);
       } catch (err) {
         console.error("PDF.js render error:", err);
       }

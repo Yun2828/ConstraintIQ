@@ -143,12 +143,10 @@ class DimensionToleranceRule:
                         ),
                         location=dim.location,
                         corrective_action=(
-                            f"Add an explicit tolerance to dimension '{dim.id}' "
+                            f"Add an explicit tolerance to dimension {dim.value} {dim.unit} "
                             "(e.g. ±0.1 mm bilateral, or +0.2/−0.0 mm unilateral), "
-                            "or add a drawing-level general tolerance block in the "
-                            "title block that covers all untoleranced dimensions.  "
-                            "Tolerances must be specified per ASME Y14.5-2018 §2.1 "
-                            "and §2.7."
+                            "or add a drawing-level general tolerance block in the title block. "
+                            "Refer to ASME Y14.5-2018 §2.1 and §2.7."
                         ),
                         standard_reference="ASME Y14.5-2018 §2.1, §2.7",
                     )
