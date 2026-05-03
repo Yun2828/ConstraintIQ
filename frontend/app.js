@@ -428,13 +428,7 @@ function renderResults(report) {
     title: formatIssueTitle(issue.issue_type),
     severity: mapSeverity(issue.severity),
     category: issue.rule_id || issue.issue_type,
-    location: issueLocation(
-      {
-        _rawCoords: issue.location && issue.location.coordinates,
-        _pageBounds: pageBounds,
-      },
-      idx,
-    ),
+    location: { x: "0%", y: "0%" }, // position handled by renderOverlays
     description: issue.description || "",
     fix: issue.corrective_action || "Refer to the applicable ANSI/ASME Y14.5 standard.",
     costImpact: costImpactFromSeverity(issue.severity),
@@ -487,19 +481,9 @@ function renderResults(report) {
 
   // Overlays on drawing — only show dots for issues with real coordinates
   overlayContainer.innerHTML = "";
-  issues.forEach((issue, idx) => {
-    // Skip drawing-level issues that have no meaningful location
-    if (!issue.location || issue.location.x === "12.0%" && issue.location.y === "15.0%"
-        && !rawCoords.length) return;
-
-    const dot = document.createElement("div");
-    dot.className = "issue-overlay";
-    dot.style.left = issue.location.x;
-    dot.style.top  = issue.location.y;
-    dot.innerHTML = `<div class="overlay-marker severity-${issue.severity}" data-id="${issue.id}">${idx + 1}</div>`;
-    dot.addEventListener("click", () => selectIssue(issue.id));
-    overlayContainer.appendChild(dot);
-  });
+  // Cache issues on lastReport for re-render after PDF loads
+  if (lastReport) lastReport._cachedIssues = issues;
+  renderOverlays(issues);
 
   // Issue cards
   panelIssues.innerHTML = "";
@@ -670,37 +654,101 @@ function issueLocation(issue, idx, allIssues) {
   };
 }
 
+// ─── PDF.js viewer state ──────────────────────────────────────────
+let _pdfPageWidth  = 1;   // PDF page width in PDF points
+let _pdfPageHeight = 1;   // PDF page height in PDF points
+let _canvasOffsetX = 0;   // canvas left offset within the wrap div
+let _canvasOffsetY = 0;   // canvas top offset within the wrap div
+let _canvasScale   = 1;   // CSS pixels per PDF point
+
 // ─── Load file into viewer ────────────────────────────────────────
 function loadFileIntoViewer(file) {
-  const pdfViewer  = document.getElementById("pdfViewer");
-  const dxfFallback = document.getElementById("dxfFallback");
+  const pdfCanvasWrap  = document.getElementById("pdfCanvasWrap");
+  const pdfCanvas      = document.getElementById("pdfCanvas");
+  const dxfFallback    = document.getElementById("dxfFallback");
   const dxfFallbackName = document.getElementById("dxfFallbackName");
 
-  // Revoke any previous object URL to free memory
-  if (pdfViewer._objectUrl) {
-    URL.revokeObjectURL(pdfViewer._objectUrl);
-    pdfViewer._objectUrl = null;
-  }
+  pdfCanvasWrap.style.display = "none";
+  dxfFallback.style.display   = "none";
+  overlayContainer.innerHTML  = "";
 
-  if (!file) {
-    pdfViewer.style.display = "none";
-    dxfFallback.style.display = "none";
-    return;
-  }
+  if (!file) return;
 
   const suffix = file.name.split(".").pop().toLowerCase();
+
   if (suffix === "pdf") {
-    const url = URL.createObjectURL(file);
-    pdfViewer._objectUrl = url;
-    pdfViewer.src = url;
-    pdfViewer.style.display = "block";
-    dxfFallback.style.display = "none";
+    pdfCanvasWrap.style.display = "block";
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const typedArray = new Uint8Array(e.target.result);
+        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1.0 });
+
+        // Scale to fit the viewer width
+        const wrapW = pdfCanvasWrap.clientWidth || 700;
+        const scale = Math.min((wrapW - 32) / viewport.width, 2.0);
+        const scaledViewport = page.getViewport({ scale });
+
+        pdfCanvas.width  = scaledViewport.width;
+        pdfCanvas.height = scaledViewport.height;
+
+        // Store for coordinate mapping
+        _pdfPageWidth  = viewport.width;
+        _pdfPageHeight = viewport.height;
+        _canvasScale   = scale;
+        // Canvas is centered — compute left offset
+        _canvasOffsetX = Math.max(0, (pdfCanvasWrap.clientWidth - scaledViewport.width) / 2);
+        _canvasOffsetY = 0;
+
+        const ctx = pdfCanvas.getContext("2d");
+        await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+
+        // Re-render overlays if report already loaded
+        if (lastReport) renderOverlays(lastReport._cachedIssues || []);
+      } catch (err) {
+        console.error("PDF.js render error:", err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
   } else {
-    // DXF / DWG — no browser renderer available
-    pdfViewer.style.display = "none";
     dxfFallbackName.textContent = file.name;
-    dxfFallback.style.display = "flex";
+    dxfFallback.style.display   = "flex";
   }
+}
+
+// ─── Render overlays on the PDF canvas ───────────────────────────
+function renderOverlays(issues) {
+  overlayContainer.innerHTML = "";
+  const pdfCanvas = document.getElementById("pdfCanvas");
+  if (!pdfCanvas) return;
+
+  // overlayContainer is absolutely positioned over the wrap div
+  // We need to position dots relative to the canvas position within the wrap
+  issues.forEach((issue, idx) => {
+    const coords = issue._rawCoords;
+    if (!coords || coords.x == null || coords.y == null) return;
+
+    // PDF coordinate system: origin at bottom-left, y increases upward
+    // Canvas coordinate system: origin at top-left, y increases downward
+    const canvasX = coords.x * _canvasScale + _canvasOffsetX;
+    const canvasY = (_pdfPageHeight - coords.y) * _canvasScale + _canvasOffsetY;
+
+    // Only show if within canvas bounds
+    if (canvasX < 0 || canvasY < 0 ||
+        canvasX > pdfCanvas.width + _canvasOffsetX ||
+        canvasY > pdfCanvas.height + _canvasOffsetY) return;
+
+    const dot = document.createElement("div");
+    dot.className = "issue-overlay";
+    dot.style.left = `${canvasX}px`;
+    dot.style.top  = `${canvasY}px`;
+    dot.innerHTML  = `<div class="overlay-marker severity-${issue.severity}" data-id="${issue.id}">${idx + 1}</div>`;
+    dot.style.pointerEvents = "all";
+    dot.addEventListener("click", () => selectIssue(issue.id));
+    overlayContainer.appendChild(dot);
+  });
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
