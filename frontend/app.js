@@ -580,11 +580,14 @@ function rfiRiskFromSeverity(sev) {
 // Spread issue markers across the drawing canvas in a grid pattern
 function issueLocation(issue, idx) {
   const cols = 4;
-  const col = idx % cols;
-  const row = Math.floor(idx / cols);
+  const rows = 4;
+  const totalSlots = cols * rows; // 16 max visible slots
+  const slotIdx = idx % totalSlots;
+  const col = slotIdx % cols;
+  const row = Math.floor(slotIdx / cols);
   return {
-    x: `${15 + col * 20}%`,
-    y: `${20 + row * 18}%`,
+    x: `${12 + col * 20}%`,
+    y: `${15 + row * 18}%`,
   };
 }
 

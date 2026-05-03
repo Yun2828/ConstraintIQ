@@ -434,6 +434,7 @@ body {
 .drawing-body {
   position: relative;
   min-height: 360px;
+  overflow: hidden;
 }
 .drawing-svg {
   width: 100%;
